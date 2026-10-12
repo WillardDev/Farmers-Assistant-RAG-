@@ -1,0 +1,14 @@
+{
+  "chunks.jsonl": {
+    "sha256": "707b1255da56ad96168b6650d6be9b7ccdb8ab308cc0a59f7e8bbc9855f06170",
+    "bytes": 577255
+  },
+  "vectors.npy": {
+    "sha256": "cda33829bb6f80afcba868c53b21a4240d2be0705aef288d73d3262daf30a887",
+    "bytes": 703616
+  },
+  "config.json": {
+    "sha256": "10aa66b3b9fa1658501234b1bd5ff37ab4c99813df635b81fcb8b1cf952672f7",
+    "bytes": 461
+  }
+}
