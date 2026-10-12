@@ -1,0 +1,21 @@
+{
+  "best_config": {
+    "dense_weight": 0.5,
+    "depth": 10,
+    "rrf_k": 10
+  },
+  "hybrid_before": {
+    "hit@5": 0.75,
+    "mrr": 0.6041666666666666
+  },
+  "hybrid_after": {
+    "hit@5": 0.9166666666666666,
+    "mrr": 0.6555555555555556
+  },
+  "dense_reference": {
+    "hit@5": 0.75,
+    "mrr": 0.638888888888889
+  },
+  "n_questions": 12,
+  "saved_at": "2026-10-12T07:20:31+00:00"
+}

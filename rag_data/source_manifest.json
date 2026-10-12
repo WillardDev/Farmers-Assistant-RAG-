@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-08T13:50:35+00:00",
+  "generated_at": "2026-10-12T07:19:55+00:00",
   "config": {
     "embedding_model": "intfloat/multilingual-e5-small",
     "chunk_words": 220,
