@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-12T09:56:26+00:00",
+  "generated_at": "2026-10-14T06:53:49+00:00",
   "config": {
     "embedding_model": "intfloat/multilingual-e5-small",
     "chunk_words": 220,
@@ -70,6 +70,196 @@
       "licence": "unverified",
       "sha256": "af7816c7cbfc45984dbe85b85c21dc03a15c9f8874f25e93a6e6cd09bb2ba36a",
       "chunks": 48
+    },
+    {
+      "source_id": "S06",
+      "filename": "CIMMYT_Maize_Diseases_Field_Identification_4thEd.pdf",
+      "title": "Maize Diseases: A Guide for Field Identification (4th ed., CIMMYT)",
+      "topic": "disease",
+      "language": "en",
+      "licence": "free to share (CIMMYT Intl Public Good)",
+      "sha256": "c8bcadc375c665af482c735989a530bc8d9b57998bbb40b4c451a0e425cd499f",
+      "chunks": 126
+    },
+    {
+      "source_id": "S07",
+      "filename": "CIMMYT_MLN_Technical_Manual_Disease_Management.pdf",
+      "title": "Maize Lethal Necrosis (MLN): A Technical Manual for Disease Management (CIMMYT)",
+      "topic": "disease",
+      "language": "en",
+      "licence": "CIMMYT publication",
+      "sha256": "7511f8694c1c1461ae79e0957c465d078cf94d9bae396ba48870e39de7c96402",
+      "chunks": 207
+    },
+    {
+      "source_id": "S08",
+      "filename": "KALRO_MLND_Kenya_Training_Manual.pdf",
+      "title": "Understanding & Managing Maize Lethal Necrosis Disease (MLND) in Kenya",
+      "topic": "disease",
+      "language": "en",
+      "licence": "Government of Kenya / KALRO",
+      "sha256": "0f77e5f1e8437e757d14b9b3fc4fa8997b5b38ec35d760a9635edb67d318c643",
+      "chunks": 70
+    },
+    {
+      "source_id": "S09",
+      "filename": "KEPHIS_National_Crop_Variety_List_2025.pdf",
+      "title": "National Crop Variety List - Kenya (2025 edition)",
+      "topic": "seed",
+      "language": "en",
+      "licence": "KEPHIS / Government of Kenya",
+      "sha256": "4c11714e9a902ff50d4bf9ee6905a4a8696b09b6dc86454df63f0c84439f63c8",
+      "chunks": 372
+    },
+    {
+      "source_id": "S10",
+      "filename": "MoA_Sustainable_Agricultural_Livelihood_Restoration_Training_Manual.pdf",
+      "title": "Sustainable Agricultural Livelihood Restoration Training Manual (MoA)",
+      "topic": "agronomy",
+      "language": "en",
+      "licence": "Government of Kenya",
+      "sha256": "f2e65123f305ce09d3ca18f0e122edc9306486e2fa0cd3f039d677a4cc0fe5d1",
+      "chunks": 787
+    },
+    {
+      "source_id": "S11",
+      "filename": "KALRO_Soil_Fertility_Soil_Testing_Overview.pdf",
+      "title": "Overview of soil fertility & soil-testing programs for fertilizer recommendations in Kenya (KALRO)",
+      "topic": "fertilizer",
+      "language": "en",
+      "licence": "KALRO / IFDC",
+      "sha256": "4a3bfacdc04423bf458399806a18e1976f1650393812ad8717d0d3f8225ea97c",
+      "chunks": 15
+    },
+    {
+      "source_id": "S12",
+      "filename": "IFDC_Kenya_Central_Fertilizer_Use_Optimizer_DAP_CAN.pdf",
+      "title": "Kenya Central Fertilizer Use Optimizer (DAP-CAN)",
+      "topic": "fertilizer",
+      "language": "en",
+      "licence": "IFDC",
+      "sha256": "a9fbd9977fa46426ac9d9b69bb9f1d509f69900829e721b2a99882db0068219d",
+      "chunks": 4
+    },
+    {
+      "source_id": "S13",
+      "filename": "IFDC_Kenya_Lower_Western_Fertilizer_Use_Optimizer_2023.pdf",
+      "title": "Kenya Lower Western Fertilizer Use Optimizer (DAP-Urea, 2023)",
+      "topic": "fertilizer",
+      "language": "en",
+      "licence": "IFDC",
+      "sha256": "ff20689bc587631fecd0eaf91225964d5b93442efc870bdddddcbca7632d31c7",
+      "chunks": 4
+    },
+    {
+      "source_id": "S14",
+      "filename": "CABI_Fall_Armyworm_Technical_Brief_Kenya_2018.pdf",
+      "title": "Fall Armyworm Technical Brief (Maize, Kenya 2018)",
+      "topic": "pest",
+      "language": "en",
+      "licence": "CABI / Ministry of Agriculture",
+      "sha256": "7176c17bcd9333cc2e33c406587a9e2fd7be863f5f99c54d325009e7068dbd65",
+      "chunks": 17
+    },
+    {
+      "source_id": "S15",
+      "filename": "CIMMYT_Fall_Armyworm_IPM_Strategic_Plan_Kenya.pdf",
+      "title": "Fall Armyworm for Maize Smallholders in Kenya: An IPM Strategic Plan (CIMMYT)",
+      "topic": "pest",
+      "language": "en",
+      "licence": "CIMMYT publication",
+      "sha256": "843de3789c8d3b903a2b946dceab59fe3a3a06c2ac53e75ad3ba3f9fecf456c0",
+      "chunks": 49
+    },
+    {
+      "source_id": "S16",
+      "filename": "FAO_Integrated_Management_Fall_Armyworm_Maize_FFS.pdf",
+      "title": "Integrated Management of the Fall Armyworm on Maize: A Guide for Farmer Field Schools in Africa (FAO)",
+      "topic": "pest",
+      "language": "en",
+      "licence": "FAO",
+      "sha256": "e41d7c2bf6a5c3a46d872c167e7654909bf20ccb1a6cd6fb00d6fc5542a56fed",
+      "chunks": 284
+    },
+    {
+      "source_id": "S17",
+      "filename": "IITA_Aflatoxin_Management_Maize_Groundnuts_Kenya.pdf",
+      "title": "Management of Aflatoxins in Maize and Groundnuts in Kenya: A Farmers' Training Manual (IITA)",
+      "topic": "postharvest",
+      "language": "en",
+      "licence": "IITA / CGIAR",
+      "sha256": "269173bc931590aac7a5fc82abd86f79e2dcbe6c7670c9a58c58f82c8185022c",
+      "chunks": 48
+    },
+    {
+      "source_id": "S18",
+      "filename": "KALRO_Aflasafe_KE01_Brief.pdf",
+      "title": "Aflasafe KE01 Brief (KALRO-Katumani)",
+      "topic": "postharvest",
+      "language": "en",
+      "licence": "KALRO",
+      "sha256": "150b1c7ecdb681afb1e84cda4ef21c39bb33173171e5c0c688fc9f7411160c73",
+      "chunks": 9
+    },
+    {
+      "source_id": "S19",
+      "filename": "FAO_Maize_Post_Harvest_Compendium.pdf",
+      "title": "Maize Post-harvest Operations Compendium (FAO)",
+      "topic": "postharvest",
+      "language": "en",
+      "licence": "FAO",
+      "sha256": "c1dc29db5b9b809db08e14e7fb67aebede8669189c059bb79248606599870840",
+      "chunks": 225
+    },
+    {
+      "source_id": "S20",
+      "filename": "TAAT_PICS_Hermetic_Bags_Grain_Storage_Guide.pdf",
+      "title": "A Guide on the Use of PICS Bags for Grain Storage (TAAT)",
+      "topic": "postharvest",
+      "language": "en",
+      "licence": "TAAT / Purdue",
+      "sha256": "0d35f19b02d24d2b98d189123c57c7aac452a138759f04fd50495335de4b7283",
+      "chunks": 8
+    },
+    {
+      "source_id": "S21",
+      "filename": "CIMMYT_Maize_Storage_Pest_Control_Metal_Silo.pdf",
+      "title": "Maize Storage Pest Control in Sub-Saharan Africa: Metal Silo Technology (CIMMYT)",
+      "topic": "postharvest",
+      "language": "en",
+      "licence": "CIMMYT publication",
+      "sha256": "6b91fda70f76f5fc1687e0873af1fcee73329c288048f67159fea94b194d3c9c",
+      "chunks": 103
+    },
+    {
+      "source_id": "S22",
+      "filename": "FAO_MAFAP_Kenya_Maize_Policy_Note.pdf",
+      "title": "Kenya maize policy note (FAO MAFAP)",
+      "topic": "policy",
+      "language": "en",
+      "licence": "FAO",
+      "sha256": "43718ac425ba0b0121017995e43c3aa0b3ea72c24e6aed2f1fd4eb3cb1aae91e",
+      "chunks": 99
+    },
+    {
+      "source_id": "S23",
+      "filename": "NCPB_Act_Cap338.pdf",
+      "title": "National Cereals and Produce Board Act (Cap 338)",
+      "topic": "policy",
+      "language": "en",
+      "licence": "Kenya Law",
+      "sha256": "8776d1eb1866b81a3db9308a4e415204649504c6034842b940aef23815afa851",
+      "chunks": 105
+    },
+    {
+      "source_id": "S24",
+      "filename": "NCPB_Restructuring_Report_2014_Cost_Of_Production.pdf",
+      "title": "NCPB Restructuring Report 2014 (cost of maize production)",
+      "topic": "policy",
+      "language": "en",
+      "licence": "NCPB",
+      "sha256": "bfbd66f49e63546e3c867b1c1c722ff27245ec42bc9bd0ae1bf64bc2f0d9409b",
+      "chunks": 457
     }
   ]
 }

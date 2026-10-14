@@ -33,6 +33,9 @@ sentence-transformers==6.1.0
 rank-bm25==0.2.2
 sentencepiece==0.2.2
 
+# chat history database (RAG_Advisory_Chatbot.ipynb section 10)
+mysql-connector-python==9.4.0
+
 # NOTE: tensorflow 2.22.0rc0 and the versions above were used on Python 3.14,
 # where no stable TensorFlow release is available yet (keras-nightly was used
 # during development). On Python 3.11 or 3.12 install a stable tensorflow
