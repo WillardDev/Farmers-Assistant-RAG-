@@ -15,3 +15,9 @@ runs/
 __pycache__/
 *.py[cod]
 .venv/
+
+# Secrets - database credentials must never be committed.
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml

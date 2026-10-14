@@ -84,7 +84,7 @@ Source: [Kaggle — Corn or Maize Leaf Disease Dataset](https://www.kaggle.com/d
 
 | Table | Key fields | Purpose |
 |---|---|---|
-| `farmers` | `id, full_name, county, preferred_lang, created_at` | Farmer profiles (no passwords — select or create a profile in the sidebar) |
+| `farmers` | `id, full_name, county, preferred_lang, created_at` | Farmer profiles (no passwords — enter a name in the Advisory tab to save a chat) |
 | `chat_sessions` | `id, farmer_id, started_at, language` | One conversation thread |
 | `chat_messages` | `id, session_id, farmer_id, role, message, language, sources, feedback, created_at` | Full chat history, retrieved citations, feedback |
 
@@ -104,16 +104,43 @@ maize_disease/
 ├── pdfs/                             # RAG knowledge base (source PDFs)
 ├── Maize_Disease_Detection_YOLO.ipynb # image classification pipeline (sections 0-11)
 ├── RAG_Advisory_Chatbot.ipynb         # RAG chatbot pipeline (10 sections)
-├── rag_pipeline.py                    # chatbot inference module for app.py (planned, not yet built)
+├── rag_pipeline.py                    # chatbot inference module, imported by app.py
+├── db.py                              # MySQL chat-history functions, imported by app.py
 ├── rag_data/                          # raw corpus + chunks.jsonl
 ├── rag_artifacts/                     # vector index, config, evaluation + export bundle (export/)
 ├── app.py                             # single-file Streamlit app (detection, advisory chat, metrics)
+├── .env                               # local MySQL credentials (git-ignored)
+├── .env.example                       # template for .env
 ├── .streamlit/config.toml             # headless server + dark theme for deployment
 ├── packages.txt                       # apt libs Streamlit Cloud needs for OpenCV
 ├── requirements.txt
 ├── README.md
 └── model_comparison.md                # final classification report, written by section 11.3
 ```
+
+## Running the app
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+The **Maize Advisory** tab is the only part that needs extra setup:
+
+1. **RAG export** — the tab loads `rag_artifacts/export/` (produced by `RAG_Advisory_Chatbot.ipynb` section 9). Run that notebook once if the folder is missing.
+2. **Database (optional)** — chat history is saved to MySQL. Copy `.env.example` to `.env` and set the `MYSQL_*` values. Create the schema once:
+
+   ```sql
+   CREATE DATABASE IF NOT EXISTS maize_advisory CHARACTER SET utf8mb4;
+   CREATE USER IF NOT EXISTS 'maize'@'localhost' IDENTIFIED BY 'maize_advisory';
+   GRANT ALL PRIVILEGES ON maize_advisory.* TO 'maize'@'localhost';
+   ```
+
+   Or, for a local Homebrew MySQL whose `root` has no password, set `MYSQL_USER=root` and leave `MYSQL_PASSWORD` empty instead.
+
+   Without a database the chat still works; it just is not saved. The app creates the tables itself on first use.
+
+The first question loads three local models (`multilingual-e5-small`, `nllb-200-distilled-600M`, `Qwen2.5-1.5B-Instruct`) and can take about a minute; later questions are fast.
 
 ## Notebooks Structure
 

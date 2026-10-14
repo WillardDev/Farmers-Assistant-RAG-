@@ -35,6 +35,7 @@ sentencepiece==0.2.2
 
 # chat history database (RAG_Advisory_Chatbot.ipynb section 10)
 mysql-connector-python==9.4.0
+python-dotenv==1.1.1
 
 # NOTE: tensorflow 2.22.0rc0 and the versions above were used on Python 3.14,
 # where no stable TensorFlow release is available yet (keras-nightly was used

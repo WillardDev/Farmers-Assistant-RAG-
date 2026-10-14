@@ -6,6 +6,15 @@ A single-file web app that classifies an uploaded maize leaf photograph into one
 of four classes - Blight, Common Rust, Gray Leaf Spot or Healthy - using the
 YOLO26 classifier trained in ``Maize_Disease_Detection_YOLO.ipynb``.
 
+A third tab hosts the **Maize Advisory** chat. It answers farming questions in
+English or Kiswahili from a local retrieval-augmented pipeline built in
+``RAG_Advisory_Chatbot.ipynb`` and exported to ``rag_artifacts/export/``. That
+pipeline (``rag_pipeline.py``) runs entirely on the machine: ``multilingual-e5-small``
+for retrieval, ``nllb-200`` for the Swahili pivot and ``Qwen2.5-1.5B-Instruct``
+for generation. Conversations are saved to MySQL when the ``MYSQL_*``
+environment variables are set (see ``db.py`` and the ``.env`` file); without them
+the chat still works, it just is not stored.
+
 Run it with::
 
     streamlit run app.py
@@ -51,6 +60,9 @@ from typing import Any
 
 import numpy as np
 import streamlit as st
+
+import db
+from rag_pipeline import AdvisoryPipeline
 
 # --------------------------------------------------------------------------- #
 #  Palette and static configuration
@@ -541,7 +553,7 @@ def format_pct(value: float) -> str:
 # --------------------------------------------------------------------------- #
 
 st.set_page_config(
-    page_title="Maize Leaf Disease Detection",
+    page_title="Maize Disease Detection & Advisory",
     page_icon="\U0001F33E",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -638,7 +650,9 @@ with st.sidebar:
 # --------------------------------------------------------------------------- #
 
 st.markdown("---")
-tab_detect, tab_perf = st.tabs(["Disease Detection", "Model Performance"])
+tab_detect, tab_perf, tab_advisory = st.tabs(
+    ["Disease Detection", "Model Performance", "Maize Advisory"]
+)
 
 
 # ---- Tab 1: the workspace -------------------------------------------------- #
@@ -965,3 +979,139 @@ with tab_perf:
   misleading.
 """
         )
+
+
+# --------------------------------------------------------------------------- #
+#  Tab 3: advisory chat
+# --------------------------------------------------------------------------- #
+
+@st.cache_resource(show_spinner=False)
+def advisory_pipeline() -> AdvisoryPipeline:
+    return AdvisoryPipeline()
+
+
+def advisory_init_db() -> None:
+    if "adv_db_ok" in st.session_state:
+        return
+    if not db.db_configured():
+        st.session_state.adv_db_ok = False
+        st.session_state.adv_db_note = (
+            "Conversations are not saved. Add the MYSQL_* variables to a .env file "
+            "in the project root to store them."
+        )
+        return
+    try:
+        db.create_schema()
+        st.session_state.adv_db_ok = True
+        st.session_state.adv_db_note = ""
+    except Exception as exc:
+        st.session_state.adv_db_ok = False
+        st.session_state.adv_db_note = (
+            f"Database unavailable, using this session only: {exc}"
+        )
+
+
+def advisory_render_sources(citations) -> None:
+    with st.expander("Sources"):
+        for cite in citations:
+            st.markdown(
+                f"**[{cite['n']}]** {cite['title']} "
+                f"(`{cite['source_id']}`, page {cite['page']})"
+            )
+            st.caption(cite["snippet"] + " ...")
+
+
+def advisory_record_feedback(message_id: int, helpful: bool) -> None:
+    try:
+        db.set_feedback(message_id, helpful)
+        st.toast("Thank you - feedback recorded.")
+    except Exception as exc:
+        st.toast(f"Could not record feedback: {exc}")
+
+
+with tab_advisory:
+    st.markdown("### Maize advisory")
+    st.caption(
+        "Ask about growing maize in Kenya - planting, varieties, fertiliser, pests, "
+        "diseases, harvest and storage. English or Kiswahili."
+    )
+
+    advisory_init_db()
+    if "adv_messages" not in st.session_state:
+        st.session_state.adv_messages = []
+
+    with st.expander("Farmer details", expanded=not st.session_state.adv_db_ok):
+        if st.session_state.adv_db_ok:
+            if st.session_state.get("adv_farmer_id"):
+                st.caption(
+                    f"Farmer #{st.session_state.adv_farmer_id}, session "
+                    f"#{st.session_state.adv_session_id}. New questions are saved."
+                )
+            else:
+                st.caption("Enter a name once and the conversation is saved to the database.")
+            with st.form("advisory_identity"):
+                name_col, county_col, lang_col = st.columns([2, 2, 1])
+                name = name_col.text_input("Name", value=st.session_state.get("adv_name", ""))
+                county = county_col.text_input("County (optional)")
+                preferred = lang_col.selectbox("Language", ["English", "Kiswahili"])
+                submitted = st.form_submit_button("Save this chat", type="primary")
+            if submitted:
+                if not name.strip():
+                    st.warning("Enter a name so the chat can be saved.")
+                else:
+                    lang = "sw" if preferred == "Kiswahili" else "en"
+                    try:
+                        farmer_id = db.create_farmer(name.strip(), county.strip() or None, lang)
+                        session_id = db.start_session(farmer_id, lang)
+                        st.session_state.adv_farmer_id = farmer_id
+                        st.session_state.adv_session_id = session_id
+                        st.session_state.adv_name = name.strip()
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Could not start a saved session: {exc}")
+        else:
+            st.info(st.session_state.adv_db_note)
+
+    for index, message in enumerate(st.session_state.adv_messages):
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            if message.get("citations"):
+                advisory_render_sources(message["citations"])
+            is_last = index == len(st.session_state.adv_messages) - 1
+            if message["role"] == "assistant" and is_last and message.get("db_id"):
+                mid = message["db_id"]
+                up_col, down_col, _ = st.columns([1, 1, 6])
+                if up_col.button("Helpful", key=f"adv_up_{mid}"):
+                    advisory_record_feedback(mid, True)
+                if down_col.button("Not helpful", key=f"adv_dn_{mid}"):
+                    advisory_record_feedback(mid, False)
+
+    question = st.chat_input("Uliza kuhusu mahindi ... / Ask about maize ...")
+    if question:
+        pipeline = advisory_pipeline()
+        result = None
+        try:
+            if not pipeline.is_loaded():
+                with st.spinner(
+                    "Loading the advisory models. This happens on the first question "
+                    "only and can take a minute."
+                ):
+                    pipeline.load()
+            with st.spinner("Searching the documents and writing an answer ..."):
+                result = pipeline.ask(question)
+        except Exception as exc:
+            st.error(f"The advisory service is unavailable: {exc}")
+
+        if result is not None:
+            entry = {"role": "assistant", "content": result["answer"],
+                     "citations": result["citations"]}
+            st.session_state.adv_messages.append({"role": "user", "content": question})
+            if st.session_state.get("adv_db_ok") and st.session_state.get("adv_session_id"):
+                try:
+                    entry["db_id"] = db.store_message(
+                        st.session_state.adv_farmer_id,
+                        st.session_state.adv_session_id, question, result)
+                except Exception as exc:
+                    st.toast(f"This turn was not saved: {exc}")
+            st.session_state.adv_messages.append(entry)
+            st.rerun()
