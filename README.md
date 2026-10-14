@@ -59,6 +59,25 @@ Source: [Kaggle — Corn or Maize Leaf Disease Dataset](https://www.kaggle.com/d
 | `Planting_strategies_of_maize_farmers_in_Kenya_a_si.pdf` | Research article: planting strategies of Kenyan maize farmers |
 | `Olwande_Smallholder_Maize_Efficiency_Kenya.pdf` | Study on smallholder maize efficiency in Kenya |
 | `diversity in maize production environments and practices.pdf` | Maize production environments and on-farm practices |
+| `CIMMYT_Maize_Diseases_Field_Identification_4thEd.pdf` | CIMMYT field guide to identifying maize diseases (fungal, bacterial, viral) |
+| `CIMMYT_MLN_Technical_Manual_Disease_Management.pdf` | CIMMYT technical manual on maize lethal necrosis (MLN) management |
+| `KALRO_MLND_Kenya_Training_Manual.pdf` | Kenya extension training manual on maize lethal necrosis disease (MLND) |
+| `KEPHIS_National_Crop_Variety_List_2025.pdf` | Official maize variety register — altitude range, maturity, yield, disease tolerance |
+| `MoA_Sustainable_Agricultural_Livelihood_Restoration_Training_Manual.pdf` | Conservation agriculture, land preparation, ISFM, problematic soils |
+| `KALRO_Soil_Fertility_Soil_Testing_Overview.pdf` | Soil fertility constraints and fertilizer recommendations |
+| `IFDC_Kenya_Central_Fertilizer_Use_Optimizer_DAP_CAN.pdf` | Per-acre DAP/CAN fertilizer rates |
+| `IFDC_Kenya_Lower_Western_Fertilizer_Use_Optimizer_2023.pdf` | Per-acre DAP/Urea fertilizer rates |
+| `CABI_Fall_Armyworm_Technical_Brief_Kenya_2018.pdf` | Fall armyworm identification, scouting and control |
+| `CIMMYT_Fall_Armyworm_IPM_Strategic_Plan_Kenya.pdf` | Fall armyworm integrated pest management strategic plan |
+| `FAO_Integrated_Management_Fall_Armyworm_Maize_FFS.pdf` | Fall armyworm management for farmer field schools |
+| `IITA_Aflatoxin_Management_Maize_Groundnuts_Kenya.pdf` | Aflatoxin prevention including Aflasafe KE01 |
+| `KALRO_Aflasafe_KE01_Brief.pdf` | Aflasafe KE01 biocontrol brief |
+| `FAO_Maize_Post_Harvest_Compendium.pdf` | Maize drying, moisture and storage |
+| `TAAT_PICS_Hermetic_Bags_Grain_Storage_Guide.pdf` | Hermetic (PICS) bag grain storage |
+| `CIMMYT_Maize_Storage_Pest_Control_Metal_Silo.pdf` | Metal silo storage pest control |
+| `FAO_MAFAP_Kenya_Maize_Policy_Note.pdf` | Maize pricing and input subsidy policy |
+| `NCPB_Act_Cap338.pdf` | NCPB grading, pricing and buying regulations |
+| `NCPB_Restructuring_Report_2014_Cost_Of_Production.pdf` | Cost of maize production breakdown |
 | `DISEASE_INFO` (from `app.py`) | Seed knowledge for the four leaf-disease classes |
 
 **MySQL database** (`maize_advisory`)
@@ -85,10 +104,9 @@ maize_disease/
 ├── pdfs/                             # RAG knowledge base (source PDFs)
 ├── Maize_Disease_Detection_YOLO.ipynb # image classification pipeline (sections 0-11)
 ├── RAG_Advisory_Chatbot.ipynb         # RAG chatbot pipeline (10 sections)
-├── rag_pipeline.py                    # chatbot inference module used by app.py
+├── rag_pipeline.py                    # chatbot inference module for app.py (planned, not yet built)
 ├── rag_data/                          # raw corpus + chunks.jsonl
-├── rag_artifacts/                     # vector index, config, evaluation report
-├── rag_logs/                          # query / feedback logs
+├── rag_artifacts/                     # vector index, config, evaluation + export bundle (export/)
 ├── app.py                             # single-file Streamlit app (detection, advisory chat, metrics)
 ├── .streamlit/config.toml             # headless server + dark theme for deployment
 ├── packages.txt                       # apt libs Streamlit Cloud needs for OpenCV
@@ -126,5 +144,4 @@ maize_disease/
 - **7. Optimization & Tuning**
 - **8. Inference Pipeline**
 - **9. Export**
-- **10. Monitoring & Feedback**
-- **11. Database & Chat History**
+- **10. Database & Chat History**
