@@ -21,3 +21,6 @@ __pycache__/
 .env.*
 !.env.example
 .streamlit/secrets.toml
+
+# Uploaded farmer profile pictures (kept out of git)
+profile_images/

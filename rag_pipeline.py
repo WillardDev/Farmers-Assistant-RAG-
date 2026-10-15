@@ -2,7 +2,7 @@
 Kenya Maize Advisory - reusable RAG pipeline
 =============================================
 
-Loads the artifacts exported by ``RAG_Advisory_Chatbot.ipynb`` section 9
+Loads the artifacts exported by ``RAG_Advisory_Chatbot.ipynb`` section 10
 (``rag_artifacts/export/``) and answers farmer questions by retrieving evidence
 from the corpus and generating a grounded, cited reply.
 
@@ -17,11 +17,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import threading
 from pathlib import Path
 
 import numpy as np
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 
 ROOT = Path(__file__).resolve().parent
 EXPORT_DIR = ROOT / "rag_artifacts" / "export"
@@ -87,8 +95,10 @@ Answer ONLY from the numbered sources below.
 - If the sources do not contain the answer, say so and advise consulting a county extension officer.
 - Reply in the SAME language the question was asked in (English or Kiswahili).
 - For pesticides, only state what the source says (product, rate, waiting period) and add a wear-gloves/wash warning.
+- Answer the LATEST question. If it is a follow-up, use the conversation to work out what it refers to, keep the same subject, and do NOT repeat or reword an earlier answer.
+- Use the conversation so far only to understand the latest question; the facts must still come from the sources.
 - End every answer with: "For decisions that affect your harvest, consult your county extension officer."
-
+{history}
 Sources:
 {context}
 
@@ -101,13 +111,17 @@ def looks_swahili(text: str) -> bool:
     return len(words & SW_STOP) >= 2
 
 
-def refuse(question: str):
+def mentions_topic(text: str) -> bool:
+    return bool(re.search(r"\b(" + "|".join(TOPIC_WORDS) + ")", text.lower()))
+
+
+def refuse(question: str, has_context: bool = False):
     text = question.lower()
     lang = "sw" if looks_swahili(question) else "en"
     for category, patterns in REFUSAL_RULES:
         if any(re.search(pattern, text) for pattern in patterns):
             return REFUSALS[category][lang]
-    if not re.search(r"\b(" + "|".join(TOPIC_WORDS) + ")", text):
+    if not mentions_topic(text) and not has_context:
         return REFUSALS["off_topic"][lang]
     return None
 
@@ -143,6 +157,18 @@ def _resolve_device() -> str:
     if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
         return "mps"
     return "cpu"
+
+
+def _login_huggingface() -> None:
+    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    if not token:
+        return
+    try:
+        from huggingface_hub import login
+
+        login(token=token, add_to_git_credential=False)
+    except Exception:
+        pass
 
 
 class _NumpyIndex:
@@ -192,6 +218,8 @@ class AdvisoryPipeline:
             vectors = np.load(self.export_dir / "vectors.npy")
             self.index = _NumpyIndex(vectors)
             self._by_id = {chunk["chunk_id"]: chunk for chunk in self.chunks}
+
+            _login_huggingface()
 
             self.embedder = SentenceTransformer(self.config["embedding_model"], device=self.device)
 
@@ -272,16 +300,29 @@ class AdvisoryPipeline:
             forced_bos_token_id=self.en_tokenizer.convert_tokens_to_ids("swh_Latn"))
         return self.en_tokenizer.decode(output[0], skip_special_tokens=True)
 
-    def retrieve(self, query: str, k: int = TOP_K):
+    def retrieve(self, query: str, k: int = TOP_K, context: list[str] | None = None):
         routed = self.translate_to_english(query) if looks_swahili(query) else query
-        return routed, self.hybrid_search(routed, k)
+        search_query = routed
+        if context:
+            recent = []
+            for previous in context[-2:]:
+                if looks_swahili(previous):
+                    previous = self.translate_to_english(previous)
+                recent.append(previous)
+            search_query = " ".join(recent + [routed])
+        return routed, self.hybrid_search(search_query, k)
 
-    def build_prompt(self, question: str, hits) -> str:
+    def build_prompt(self, question: str, hits, history=None) -> str:
         context = "\n\n".join(
             f"[{i}] {chunk['title']} ({chunk['source_id']}, page {chunk['page']}):\n{chunk['text']}"
             for i, (_, chunk) in enumerate(hits, start=1)
         )
-        return PROMPT_TEMPLATE.format(context=context, question=question)
+        history_text = ""
+        if history:
+            lines = [f"{'User' if turn['role'] == 'user' else 'Assistant'}: {turn['content']}"
+                     for turn in history[-6:]]
+            history_text = "\nConversation so far (for context only):\n" + "\n".join(lines) + "\n"
+        return PROMPT_TEMPLATE.format(context=context, question=question, history=history_text)
 
     def generate(self, prompt: str, max_new_tokens: int = 400) -> str:
         messages = [{"role": "user", "content": prompt}]
@@ -302,18 +343,21 @@ class AdvisoryPipeline:
             for i, (_, chunk) in enumerate(hits, start=1)
         ]
 
-    def ask(self, question: str, k: int = TOP_K) -> dict:
+    def ask(self, question: str, k: int = TOP_K, history: list[dict] | None = None) -> dict:
         if not self._loaded:
             self.load()
 
-        refusal = refuse(question)
+        history = history or []
+        prior_user = [turn["content"] for turn in history if turn.get("role") == "user"]
+
+        refusal = refuse(question, has_context=bool(prior_user))
         if refusal:
             return {"question": question, "answer": refusal, "sources": [],
                     "citations": [], "english_query": None, "refused": True, "problems": [],
                     "translated": False, "language": "sw" if looks_swahili(question) else "en"}
 
-        english_query, hits = self.retrieve(question, k)
-        prompt = self.build_prompt(english_query, hits)
+        english_query, hits = self.retrieve(question, k, context=prior_user)
+        prompt = self.build_prompt(english_query, hits, history)
         answer = self.generate(prompt)
         problems = validate_answer(answer, question, len(hits))
 

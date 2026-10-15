@@ -84,7 +84,7 @@ Source: [Kaggle — Corn or Maize Leaf Disease Dataset](https://www.kaggle.com/d
 
 | Table | Key fields | Purpose |
 |---|---|---|
-| `farmers` | `id, full_name, county, preferred_lang, created_at` | Farmer profiles (no passwords — enter a name in the Advisory tab to save a chat) |
+| `farmers` | `id, full_name, email, password_hash, county, preferred_lang, profile_image, created_at` | Farmer accounts. `password_hash` is a salted PBKDF2-HMAC-SHA256 digest; `profile_image` is an optional path under `profile_images/` |
 | `chat_sessions` | `id, farmer_id, started_at, language` | One conversation thread |
 | `chat_messages` | `id, session_id, farmer_id, role, message, language, sources, feedback, created_at` | Full chat history, retrieved citations, feedback |
 
@@ -103,12 +103,13 @@ maize_disease/
 │   └── maize_disease_yolo26s.pt       # final trained model - TRACKED IN GIT, the app needs it
 ├── pdfs/                             # RAG knowledge base (source PDFs)
 ├── Maize_Disease_Detection_YOLO.ipynb # image classification pipeline (sections 0-11)
-├── RAG_Advisory_Chatbot.ipynb         # RAG chatbot pipeline (10 sections)
+├── RAG_Advisory_Chatbot.ipynb         # RAG chatbot pipeline (11 sections)
 ├── rag_pipeline.py                    # chatbot inference module, imported by app.py
 ├── db.py                              # MySQL chat-history functions, imported by app.py
 ├── rag_data/                          # raw corpus + chunks.jsonl
 ├── rag_artifacts/                     # vector index, config, evaluation + export bundle (export/)
-├── app.py                             # single-file Streamlit app (detection, advisory chat, metrics)
+├── profile_images/                    # uploaded profile pictures (git-ignored)
+├── app.py                             # single-file Streamlit app (login, detection, advisory chat, metrics)
 ├── .env                               # local MySQL credentials (git-ignored)
 ├── .env.example                       # template for .env
 ├── .streamlit/config.toml             # headless server + dark theme for deployment
@@ -120,15 +121,20 @@ maize_disease/
 
 ## Running the app
 
+Use the project virtualenv. The app needs packages (`torch`, `transformers`, `mysql-connector-python`, ...) that are **not** in the system Python, so run `streamlit` from inside `.venv` - otherwise you get `ModuleNotFoundError: No module named 'mysql'`.
+
 ```bash
-pip install -r requirements.txt
-streamlit run app.py
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/streamlit run app.py
 ```
 
-The **Maize Advisory** tab is the only part that needs extra setup:
+On macOS the quickest repeatable command is just `.venv/bin/streamlit run app.py`. If you have activated the venv (`source .venv/bin/activate`), plain `streamlit run app.py` uses the venv too.
 
-1. **RAG export** — the tab loads `rag_artifacts/export/` (produced by `RAG_Advisory_Chatbot.ipynb` section 9). Run that notebook once if the folder is missing.
-2. **Database (optional)** — chat history is saved to MySQL. Copy `.env.example` to `.env` and set the `MYSQL_*` values. Create the schema once:
+The app is behind a login, so a database is **required**: farmers create an account (name, email, password, optional profile picture) and every conversation is saved against them.
+
+1. **RAG export** — the advisory tab loads `rag_artifacts/export/` (produced by `RAG_Advisory_Chatbot.ipynb` section 10). Run that notebook once if the folder is missing.
+2. **Database** — copy `.env.example` to `.env` and set the `MYSQL_*` values. Create the database and a dedicated user once:
 
    ```sql
    CREATE DATABASE IF NOT EXISTS maize_advisory CHARACTER SET utf8mb4;
@@ -136,11 +142,9 @@ The **Maize Advisory** tab is the only part that needs extra setup:
    GRANT ALL PRIVILEGES ON maize_advisory.* TO 'maize'@'localhost';
    ```
 
-   Or, for a local Homebrew MySQL whose `root` has no password, set `MYSQL_USER=root` and leave `MYSQL_PASSWORD` empty instead.
+   Or, for a local Homebrew MySQL whose `root` has no password, set `MYSQL_USER=root` and leave `MYSQL_PASSWORD` empty instead. The app creates the tables itself on first use.
 
-   Without a database the chat still works; it just is not saved. The app creates the tables itself on first use.
-
-The first question loads three local models (`multilingual-e5-small`, `nllb-200-distilled-600M`, `Qwen2.5-1.5B-Instruct`) and can take about a minute; later questions are fast.
+Passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes (Python standard library). The first advisory question loads three local models (`multilingual-e5-small`, `nllb-200-distilled-600M`, `Qwen2.5-1.5B-Instruct`) and can take about a minute; later questions are fast.
 
 ## Notebooks Structure
 
@@ -170,5 +174,6 @@ The first question loads three local models (`multilingual-e5-small`, `nllb-200-
 - **6. Guardrails & Safety**
 - **7. Optimization & Tuning**
 - **8. Inference Pipeline**
-- **9. Export**
-- **10. Database & Chat History**
+- **9. Error Analysis**
+- **10. Export**
+- **11. Database & Chat History**

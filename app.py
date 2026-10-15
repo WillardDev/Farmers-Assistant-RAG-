@@ -11,9 +11,14 @@ English or Kiswahili from a local retrieval-augmented pipeline built in
 ``RAG_Advisory_Chatbot.ipynb`` and exported to ``rag_artifacts/export/``. That
 pipeline (``rag_pipeline.py``) runs entirely on the machine: ``multilingual-e5-small``
 for retrieval, ``nllb-200`` for the Swahili pivot and ``Qwen2.5-1.5B-Instruct``
-for generation. Conversations are saved to MySQL when the ``MYSQL_*``
-environment variables are set (see ``db.py`` and the ``.env`` file); without them
-the chat still works, it just is not stored.
+for generation. The chat carries the conversation so far, so follow-up questions
+like "so should I use phosphorus?" are understood in context.
+
+The whole app sits behind a login. Farmer accounts (name, email, optional
+profile picture, PBKDF2-hashed password) and every conversation are stored in
+MySQL when the ``MYSQL_*`` environment variables are set (see ``db.py`` and the
+``.env`` file). Accounts are required, so the app shows a sign-in screen until a
+farmer logs in.
 
 Run it with::
 
@@ -55,6 +60,7 @@ Design notes
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +87,7 @@ ACCENT = "#6EC8FF"     # links, focus rings, secondary highlight
 
 IMG_SIZE = 256         # what the classifier was trained at
 PROJECT_ROOT = Path(__file__).resolve().parent
+PROFILE_DIR = PROJECT_ROOT / "profile_images"
 
 # The notebook's final model. It is a *fine-tuned* classifier, so it actually
 # knows the four maize classes. ``yolo26n-cls.pt`` is the generic pretrained
@@ -568,8 +575,7 @@ def brand() -> None:
         <div class="brand">
           <div class="brand-mark">M</div>
           <div>
-            <div class="brand-name">Maize Leaf Disease Detection</div>
-            <div class="brand-sub">YOLO26 classifier &middot; 4 classes &middot; 4,188 labelled images</div>
+            <div class="brand-name">Maize Farming</div>
           </div>
         </div>
         """,
@@ -578,25 +584,234 @@ def brand() -> None:
 
 
 # --------------------------------------------------------------------------- #
+#  Authentication
+# --------------------------------------------------------------------------- #
+
+def validate_signup(full_name: str, email: str, password: str, confirm: str,
+                    county: str) -> list[str]:
+    errors = []
+    full_name = (full_name or "").strip()
+    email = (email or "").strip()
+    county = (county or "").strip()
+    if len(full_name) < 2:
+        errors.append("Enter your full name (at least 2 characters).")
+    if len(full_name) > 120:
+        errors.append("Name must be 120 characters or fewer.")
+    if not db.EMAIL_RE.match(email):
+        errors.append("Enter a valid email address, for example jina@example.com.")
+    if len(email) > 190:
+        errors.append("That email address is too long.")
+    if len(password or "") < 8:
+        errors.append("Choose a password with at least 8 characters.")
+    if password != confirm:
+        errors.append("The two passwords do not match.")
+    if county and len(county) > 60:
+        errors.append("County must be 60 characters or fewer.")
+    return errors
+
+
+def save_profile_image(farmer_id: int, uploaded) -> str | None:
+    if uploaded is None:
+        return None
+    from PIL import Image
+
+    PROFILE_DIR.mkdir(exist_ok=True)
+    try:
+        image = Image.open(uploaded).convert("RGB")
+    except Exception:
+        raise ValueError("That file could not be read as an image.")
+    image.thumbnail((256, 256))
+    path = PROFILE_DIR / f"farmer_{farmer_id}.jpg"
+    image.save(path, "JPEG", quality=85)
+    return str(path.relative_to(PROJECT_ROOT))
+
+
+def render_auth_page() -> None:
+    brand()
+    st.markdown("### Welcome")
+    st.caption(
+        "Sign in to use the maize disease detector and the advisory chatbot. "
+        "New here? Create a free account in a few seconds."
+    )
+
+    intro_col, form_col = st.columns([1, 1], gap="large")
+    with intro_col:
+        st.markdown(
+            """
+            <div class="card">
+              <h4>What you get</h4>
+              <div class="field">
+                <div class="field-key">Leaf diagnosis</div>
+                <div class="field-val">Photograph a maize leaf and get the most likely
+                disease with a confidence score.</div>
+              </div>
+              <div class="field">
+                <div class="field-key">Advisory chat</div>
+                <div class="field-val">Ask about planting, fertiliser, pests, diseases,
+                harvest and storage, in English or Kiswahili.</div>
+              </div>
+              <div class="field">
+                <div class="field-key">Saved history</div>
+                <div class="field-val">Your conversations and feedback are stored
+                against your account.</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with form_col:
+        mode = st.radio("Account", ["Log in", "Create account"], horizontal=True,
+                        label_visibility="collapsed")
+
+        if mode == "Log in":
+            with st.form("login_form"):
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                submitted = st.form_submit_button("Log in", type="primary", width="stretch")
+            if submitted:
+                errors = []
+                if not db.EMAIL_RE.match((email or "").strip()):
+                    errors.append("Enter a valid email address.")
+                if not password:
+                    errors.append("Enter your password.")
+                for message in errors:
+                    st.error(message)
+                if not errors:
+                    try:
+                        account = db.authenticate(email.strip(), password)
+                    except Exception as exc:
+                        st.error(f"Could not reach the account database: {exc}")
+                        account = None
+                    if account is None:
+                        st.error("Email or password is incorrect.")
+                    else:
+                        st.session_state.auth_farmer = account
+                        st.session_state.adv_messages = []
+                        st.session_state.pop("adv_session_id", None)
+                        st.rerun()
+        else:
+            with st.form("signup_form"):
+                full_name = st.text_input("Full name")
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password",
+                                         help="At least 8 characters.")
+                confirm = st.text_input("Confirm password", type="password")
+                county = st.text_input("County (optional)")
+                preferred = st.selectbox("Preferred language", ["English", "Kiswahili"])
+                picture = st.file_uploader("Profile picture (optional)",
+                                           type=["jpg", "jpeg", "png"])
+                submitted = st.form_submit_button("Create account", type="primary",
+                                                  width="stretch")
+            if submitted:
+                errors = validate_signup(full_name, email, password, confirm, county)
+                for message in errors:
+                    st.error(message)
+                if not errors:
+                    try:
+                        farmer_id = db.create_account(
+                            full_name.strip(), email.strip(), password,
+                            county.strip() or None,
+                            "sw" if preferred == "Kiswahili" else "en")
+                        if picture is not None:
+                            try:
+                                relative = save_profile_image(farmer_id, picture)
+                            except ValueError as exc:
+                                st.warning(str(exc))
+                                relative = None
+                            if relative:
+                                db.update_profile_image(farmer_id, relative)
+                        st.session_state.auth_farmer = db.get_farmer(farmer_id)
+                        st.session_state.adv_messages = []
+                        st.session_state.pop("adv_session_id", None)
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    except Exception as exc:
+                        st.error(f"Could not create the account: {exc}")
+
+
+@st.cache_resource(show_spinner=False)
+def ensure_schema() -> bool:
+    if not db.db_configured():
+        return False
+    try:
+        db.create_schema()
+        return True
+    except Exception:
+        return False
+
+
+ensure_schema()
+
+if not st.session_state.get("auth_farmer"):
+    render_auth_page()
+    st.stop()
+
+farmer = st.session_state.auth_farmer
+
+
+# --------------------------------------------------------------------------- #
 #  Sidebar
 # --------------------------------------------------------------------------- #
 
-use_pretrained = False
 with st.sidebar:
     brand()
-    st.markdown("#### About")
-    st.markdown(
-        """
-        Classifies a maize leaf photograph into **Blight**, **Common Rust**,
-        **Gray Leaf Spot** or **Healthy**.
 
-        The weights come from a YOLO26 classification model fine-tuned on the
-        Corn or Maize Leaf Disease dataset, split 70/15/15 and evaluated on 625
-        held-out images.
+    profile_path = farmer.get("profile_image")
+    if profile_path and (PROJECT_ROOT / profile_path).exists():
+        st.image(str(PROJECT_ROOT / profile_path), width=72)
+    st.markdown(f"**{farmer['full_name']}**")
+    if farmer.get("email"):
+        st.caption(farmer["email"])
+    if farmer.get("preferred_lang"):
+        st.caption("Swahili preferred" if farmer["preferred_lang"] == "sw" else "English preferred")
+    if st.button("Log out", width="stretch"):
+        st.session_state.clear()
+        st.rerun()
 
-        Intended use is triage and prioritisation with agronomist confirmation
-        - not standalone diagnosis.
-        """
+    st.markdown("---")
+    st.markdown("#### Your conversations")
+    if not db.db_configured():
+        st.caption("Your conversation history is unavailable because the database "
+                   "is not configured.")
+    else:
+        try:
+            conversations = db.list_sessions(farmer["id"])
+        except Exception as exc:
+            conversations = []
+            st.caption(f"Could not load your conversations: {exc}")
+        if conversations:
+            for convo in conversations:
+                topic = (convo.get("topic") or "New conversation").strip()
+                if len(topic) > 64:
+                    topic = topic[:61].rstrip() + "..."
+                when = (
+                    convo["started_at"].strftime("%d %b %Y")
+                    if convo.get("started_at") else ""
+                )
+                st.markdown(f"- {topic}  \n  {when}")
+        else:
+            st.caption("No conversations yet. Ask a question in the Maize Advisory tab.")
+
+
+# --------------------------------------------------------------------------- #
+#  Tabs
+# --------------------------------------------------------------------------- #
+
+st.markdown("---")
+tab_detect, tab_perf, tab_advisory = st.tabs(
+    ["Disease Detection", "Model Performance", "Maize Advisory"]
+)
+
+
+# ---- Tab 1: the workspace -------------------------------------------------- #
+with tab_detect:
+    st.markdown("### Disease detection")
+    st.caption(
+        f"Upload one maize leaf photograph, or take one with your camera. The "
+        f"classifier expects images at {IMG_SIZE}x{IMG_SIZE} and will resize what "
+        f"you give it."
     )
 
     st.markdown("#### Model status")
@@ -629,40 +844,6 @@ with st.sidebar:
         hint = deployment_hint(model_path, model_error)
         if hint:
             st.warning(hint, icon="\U0001F4E5")
-
-    st.markdown("#### Model performance")
-    m = YOLO26N_METRICS
-    c1, c2 = st.columns(2)
-    c1.metric("Test accuracy", format_pct(m["accuracy"]))
-    c2.metric("Macro F1", format_pct(m["macro_f1"]))
-    st.caption("yolo26n-cls baseline, 625 held-out images.")
-
-    st.markdown("---")
-    st.caption(
-        "Triage aid only. A 5% error rate means roughly one leaf in twenty is "
-        "misread, so a healthy leaf reported as diseased wastes money and "
-        "builds resistance to the tool."
-    )
-
-
-# --------------------------------------------------------------------------- #
-#  Tabs
-# --------------------------------------------------------------------------- #
-
-st.markdown("---")
-tab_detect, tab_perf, tab_advisory = st.tabs(
-    ["Disease Detection", "Model Performance", "Maize Advisory"]
-)
-
-
-# ---- Tab 1: the workspace -------------------------------------------------- #
-with tab_detect:
-    st.markdown("### Disease detection")
-    st.caption(
-        f"Upload one maize leaf photograph, or take one with your camera. The "
-        f"classifier expects images at {IMG_SIZE}x{IMG_SIZE} and will resize what "
-        f"you give it."
-    )
 
     source = st.radio(
         "Photo source",
@@ -917,6 +1098,34 @@ with tab_detect:
                                     "indifferent between the top two classes."
                                 )
 
+    st.markdown("---")
+    st.markdown("#### Model performance")
+    m = YOLO26N_METRICS
+    c1, c2 = st.columns(2)
+    c1.metric("Test accuracy", format_pct(m["accuracy"]))
+    c2.metric("Macro F1", format_pct(m["macro_f1"]))
+    st.caption("yolo26n-cls baseline, 625 held-out images.")
+
+    st.markdown("#### About")
+    st.markdown(
+        """
+        Classifies a maize leaf photograph into **Blight**, **Common Rust**,
+        **Gray Leaf Spot** or **Healthy**.
+
+        The weights come from a YOLO26 classification model fine-tuned on the
+        Corn or Maize Leaf Disease dataset, split 70/15/15 and evaluated on 625
+        held-out images.
+
+        Intended use is triage and prioritisation with agronomist confirmation
+        - not standalone diagnosis.
+        """
+    )
+    st.caption(
+        "Triage aid only. A 5% error rate means roughly one leaf in twenty is "
+        "misread, so a healthy leaf reported as diseased wastes money and "
+        "builds resistance to the tool."
+    )
+
 
 # ---- Tab 2: measured performance ------------------------------------------ #
 with tab_perf:
@@ -1040,37 +1249,13 @@ with tab_advisory:
     if "adv_messages" not in st.session_state:
         st.session_state.adv_messages = []
 
-    with st.expander("Farmer details", expanded=not st.session_state.adv_db_ok):
-        if st.session_state.adv_db_ok:
-            if st.session_state.get("adv_farmer_id"):
-                st.caption(
-                    f"Farmer #{st.session_state.adv_farmer_id}, session "
-                    f"#{st.session_state.adv_session_id}. New questions are saved."
-                )
-            else:
-                st.caption("Enter a name once and the conversation is saved to the database.")
-            with st.form("advisory_identity"):
-                name_col, county_col, lang_col = st.columns([2, 2, 1])
-                name = name_col.text_input("Name", value=st.session_state.get("adv_name", ""))
-                county = county_col.text_input("County (optional)")
-                preferred = lang_col.selectbox("Language", ["English", "Kiswahili"])
-                submitted = st.form_submit_button("Save this chat", type="primary")
-            if submitted:
-                if not name.strip():
-                    st.warning("Enter a name so the chat can be saved.")
-                else:
-                    lang = "sw" if preferred == "Kiswahili" else "en"
-                    try:
-                        farmer_id = db.create_farmer(name.strip(), county.strip() or None, lang)
-                        session_id = db.start_session(farmer_id, lang)
-                        st.session_state.adv_farmer_id = farmer_id
-                        st.session_state.adv_session_id = session_id
-                        st.session_state.adv_name = name.strip()
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Could not start a saved session: {exc}")
-        else:
-            st.info(st.session_state.adv_db_note)
+    if st.session_state.adv_db_ok:
+        st.caption(
+            f"Signed in as {farmer['full_name']}. Your conversations are saved to "
+            f"your account."
+        )
+    else:
+        st.info(st.session_state.adv_db_note)
 
     for index, message in enumerate(st.session_state.adv_messages):
         with st.chat_message(message["role"]):
@@ -1089,6 +1274,8 @@ with tab_advisory:
     question = st.chat_input("Uliza kuhusu mahindi ... / Ask about maize ...")
     if question:
         pipeline = advisory_pipeline()
+        history = [{"role": m["role"], "content": m["content"]}
+                   for m in st.session_state.adv_messages]
         result = None
         try:
             if not pipeline.is_loaded():
@@ -1098,7 +1285,7 @@ with tab_advisory:
                 ):
                     pipeline.load()
             with st.spinner("Searching the documents and writing an answer ..."):
-                result = pipeline.ask(question)
+                result = pipeline.ask(question, history=history)
         except Exception as exc:
             st.error(f"The advisory service is unavailable: {exc}")
 
@@ -1106,11 +1293,13 @@ with tab_advisory:
             entry = {"role": "assistant", "content": result["answer"],
                      "citations": result["citations"]}
             st.session_state.adv_messages.append({"role": "user", "content": question})
-            if st.session_state.get("adv_db_ok") and st.session_state.get("adv_session_id"):
+            if st.session_state.get("adv_db_ok"):
                 try:
+                    if not st.session_state.get("adv_session_id"):
+                        st.session_state.adv_session_id = db.start_session(
+                            farmer["id"], farmer.get("preferred_lang", "en"))
                     entry["db_id"] = db.store_message(
-                        st.session_state.adv_farmer_id,
-                        st.session_state.adv_session_id, question, result)
+                        farmer["id"], st.session_state.adv_session_id, question, result)
                 except Exception as exc:
                     st.toast(f"This turn was not saved: {exc}")
             st.session_state.adv_messages.append(entry)
