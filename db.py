@@ -3,7 +3,7 @@ Kenya Maize Advisory - accounts and MySQL chat history
 ======================================================
 
 The functions the Streamlit app calls to create farmer accounts, log them in,
-and persist conversations. They mirror ``RAG_Advisory_Chatbot.ipynb`` section 11
+and persist conversations. They mirror ``RAG_Advisory_Chatbot.ipynb`` section 12
 and read their connection details from the environment, loading a local ``.env``
 file when one is present.
 

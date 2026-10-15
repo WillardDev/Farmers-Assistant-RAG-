@@ -1,0 +1,47 @@
+{
+  "saved_at": "2026-10-15T14:04:23+00:00",
+  "n_probes": 13,
+  "pass_rate": {
+    "before": 0.462,
+    "after": 0.692
+  },
+  "counts": [
+    {
+      "flag": "disclaimer missing",
+      "before": 5,
+      "after": 0
+    },
+    {
+      "flag": "no citation",
+      "before": 7,
+      "after": 4
+    },
+    {
+      "flag": "pesticide without a rate",
+      "before": 2,
+      "after": 1
+    },
+    {
+      "flag": "should have refused",
+      "before": 3,
+      "after": 0
+    },
+    {
+      "flag": "unsupported numbers",
+      "before": 1,
+      "after": 0
+    },
+    {
+      "flag": "weak claim support",
+      "before": 2,
+      "after": 1
+    }
+  ],
+  "still_failing": [],
+  "not_attempted": [
+    "citation discipline (model behaviour)",
+    "fine-tuning or a larger generator",
+    "constrained decoding",
+    "mirroring into rag_pipeline.py"
+  ]
+}

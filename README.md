@@ -103,7 +103,7 @@ maize_disease/
 │   └── maize_disease_yolo26s.pt       # final trained model - TRACKED IN GIT, the app needs it
 ├── pdfs/                             # RAG knowledge base (source PDFs)
 ├── Maize_Disease_Detection_YOLO.ipynb # image classification pipeline (sections 0-11)
-├── RAG_Advisory_Chatbot.ipynb         # RAG chatbot pipeline (11 sections)
+├── RAG_Advisory_Chatbot.ipynb         # RAG chatbot pipeline (12 sections)
 ├── rag_pipeline.py                    # chatbot inference module, imported by app.py
 ├── db.py                              # MySQL chat-history functions, imported by app.py
 ├── rag_data/                          # raw corpus + chunks.jsonl
@@ -133,7 +133,7 @@ On macOS the quickest repeatable command is just `.venv/bin/streamlit run app.py
 
 The app is behind a login, so a database is **required**: farmers create an account (name, email, password, optional profile picture) and every conversation is saved against them.
 
-1. **RAG export** — the advisory tab loads `rag_artifacts/export/` (produced by `RAG_Advisory_Chatbot.ipynb` section 10). Run that notebook once if the folder is missing.
+1. **RAG export** — the advisory tab loads `rag_artifacts/export/` (produced by `RAG_Advisory_Chatbot.ipynb` section 11). Run that notebook once if the folder is missing.
 2. **Database** — copy `.env.example` to `.env` and set the `MYSQL_*` values. Create the database and a dedicated user once:
 
    ```sql
@@ -175,5 +175,6 @@ Passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes (Python standard l
 - **7. Optimization & Tuning**
 - **8. Inference Pipeline**
 - **9. Error Analysis**
-- **10. Export**
-- **11. Database & Chat History**
+- **10. Error Reduction**
+- **11. Export**
+- **12. Database & Chat History**

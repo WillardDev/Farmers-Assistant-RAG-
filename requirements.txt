@@ -33,7 +33,7 @@ sentence-transformers==6.1.0
 rank-bm25==0.2.2
 sentencepiece==0.2.2
 
-# chat history database (RAG_Advisory_Chatbot.ipynb section 10)
+# chat history database (RAG_Advisory_Chatbot.ipynb section 12)
 mysql-connector-python==9.4.0
 python-dotenv==1.1.1
 

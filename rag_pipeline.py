@@ -2,7 +2,7 @@
 Kenya Maize Advisory - reusable RAG pipeline
 =============================================
 
-Loads the artifacts exported by ``RAG_Advisory_Chatbot.ipynb`` section 10
+Loads the artifacts exported by ``RAG_Advisory_Chatbot.ipynb`` section 11
 (``rag_artifacts/export/``) and answers farmer questions by retrieving evidence
 from the corpus and generating a grounded, cited reply.
 
