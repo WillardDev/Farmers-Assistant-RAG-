@@ -7,6 +7,10 @@ and persist conversations. They mirror ``RAG_Advisory_Chatbot.ipynb`` section 12
 and read their connection details from the environment, loading a local ``.env``
 file when one is present.
 
+Login tokens are opaque random strings stored in ``login_tokens`` with a sliding
+``LOGIN_TTL_MINUTES`` window, so a browser reload can restore the signed-in
+farmer without asking for the password again.
+
 Passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes (standard library,
 no extra dependency). Nothing connects at import time; every call opens its own
 connection so a missing database degrades to a message instead of a crash.
@@ -38,6 +42,7 @@ from rag_pipeline import looks_swahili
 
 DB_ENV_KEYS = ("MYSQL_HOST", "MYSQL_DATABASE", "MYSQL_USER", "MYSQL_PASSWORD")
 PBKDF2_ITERATIONS = 200_000
+LOGIN_TTL_MINUTES = 30
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 DATABASE_SQL = [
@@ -70,6 +75,12 @@ DATABASE_SQL = [
         feedback TINYINT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE,
+        FOREIGN KEY (farmer_id) REFERENCES farmers(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS login_tokens (
+        token CHAR(64) PRIMARY KEY,
+        farmer_id INT NOT NULL,
+        last_seen TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (farmer_id) REFERENCES farmers(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 ]
@@ -292,4 +303,55 @@ def set_feedback(message_id: int, helpful: bool) -> None:
         cursor = connection.cursor()
         cursor.execute("UPDATE chat_messages SET feedback = %s WHERE id = %s",
                        (1 if helpful else -1, message_id))
+        cursor.close()
+
+
+def create_login_token(farmer_id: int) -> str:
+    token = secrets.token_hex(32)
+    with db_connection() as connection:
+        cursor = connection.cursor()
+        cursor.execute(
+            "DELETE FROM login_tokens WHERE farmer_id = %s "
+            "OR last_seen < DATE_SUB(NOW(), INTERVAL %s MINUTE)",
+            (farmer_id, LOGIN_TTL_MINUTES))
+        cursor.execute(
+            "INSERT INTO login_tokens (token, farmer_id) VALUES (%s, %s)",
+            (token, farmer_id))
+        cursor.close()
+    return token
+
+
+def resolve_login_token(token: str | None) -> int | None:
+    if not token:
+        return None
+    with db_connection() as connection:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT farmer_id FROM login_tokens WHERE token = %s "
+            "AND last_seen >= DATE_SUB(NOW(), INTERVAL %s MINUTE)",
+            (token, LOGIN_TTL_MINUTES))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("UPDATE login_tokens SET last_seen = NOW() WHERE token = %s", (token,))
+        else:
+            cursor.execute("DELETE FROM login_tokens WHERE token = %s", (token,))
+        cursor.close()
+    return row["farmer_id"] if row else None
+
+
+def touch_login_token(token: str | None) -> None:
+    if not token:
+        return
+    with db_connection() as connection:
+        cursor = connection.cursor()
+        cursor.execute("UPDATE login_tokens SET last_seen = NOW() WHERE token = %s", (token,))
+        cursor.close()
+
+
+def delete_login_token(token: str | None) -> None:
+    if not token:
+        return
+    with db_connection() as connection:
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM login_tokens WHERE token = %s", (token,))
         cursor.close()

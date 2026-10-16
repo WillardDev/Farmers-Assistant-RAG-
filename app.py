@@ -18,7 +18,10 @@ The whole app sits behind a login. Farmer accounts (name, email, optional
 profile picture, PBKDF2-hashed password) and every conversation are stored in
 MySQL when the ``MYSQL_*`` environment variables are set (see ``db.py`` and the
 ``.env`` file). Accounts are required, so the app shows a sign-in screen until a
-farmer logs in.
+farmer logs in. A login is remembered across page reloads for 30 minutes of
+inactivity using an opaque token in the URL (validated against ``login_tokens``),
+and the sidebar lists the farmer's saved conversations so any of them can be
+reopened and continued.
 
 Run it with::
 
@@ -60,7 +63,9 @@ Design notes
 from __future__ import annotations
 
 import io
+import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -626,12 +631,81 @@ def save_profile_image(farmer_id: int, uploaded) -> str | None:
     return str(path.relative_to(PROJECT_ROOT))
 
 
+LOGIN_TIMEOUT_MINUTES = db.LOGIN_TTL_MINUTES
+TOKEN_PARAM = "auth"
+TOKEN_TOUCH_SECONDS = 120
+
+
+def login_farmer(account: dict) -> None:
+    st.session_state.auth_farmer = account
+    st.session_state.adv_messages = []
+    st.session_state.pop("adv_session_id", None)
+    try:
+        token = db.create_login_token(account["id"])
+    except Exception:
+        token = None
+    if token:
+        st.session_state.auth_token = token
+        st.session_state.auth_touched = time.time()
+        st.query_params[TOKEN_PARAM] = token
+
+
+def logout_farmer() -> None:
+    token = st.session_state.get("auth_token") or st.query_params.get(TOKEN_PARAM)
+    try:
+        db.delete_login_token(token)
+    except Exception:
+        pass
+    try:
+        st.query_params.pop(TOKEN_PARAM, None)
+    except Exception:
+        pass
+    st.session_state.clear()
+
+
+def restore_session() -> None:
+    if st.session_state.get("auth_farmer"):
+        return
+    token = st.query_params.get(TOKEN_PARAM)
+    if not token:
+        return
+    try:
+        farmer_id = db.resolve_login_token(token)
+    except Exception:
+        farmer_id = None
+    if not farmer_id:
+        st.query_params.pop(TOKEN_PARAM, None)
+        return
+    account = db.get_farmer(farmer_id)
+    if account:
+        st.session_state.auth_farmer = account
+        st.session_state.auth_token = token
+        st.session_state.auth_touched = time.time()
+        st.session_state.adv_messages = []
+        st.session_state.pop("adv_session_id", None)
+
+
+def keep_session_alive() -> None:
+    token = st.session_state.get("auth_token")
+    if not token:
+        return
+    now = time.time()
+    if now - st.session_state.get("auth_touched", 0) < TOKEN_TOUCH_SECONDS:
+        return
+    st.session_state.auth_touched = now
+    try:
+        db.touch_login_token(token)
+    except Exception:
+        pass
+
+
 def render_auth_page() -> None:
     brand()
     st.markdown("### Welcome")
     st.caption(
         "Sign in to use the maize disease detector and the advisory chatbot. "
-        "New here? Create a free account in a few seconds."
+        "New here? Create a free account in a few seconds. You stay signed in "
+        f"for {LOGIN_TIMEOUT_MINUTES} minutes of inactivity, even after a reload."
     )
 
     intro_col, form_col = st.columns([1, 1], gap="large")
@@ -686,9 +760,7 @@ def render_auth_page() -> None:
                     if account is None:
                         st.error("Email or password is incorrect.")
                     else:
-                        st.session_state.auth_farmer = account
-                        st.session_state.adv_messages = []
-                        st.session_state.pop("adv_session_id", None)
+                        login_farmer(account)
                         st.rerun()
         else:
             with st.form("signup_form"):
@@ -721,9 +793,7 @@ def render_auth_page() -> None:
                                 relative = None
                             if relative:
                                 db.update_profile_image(farmer_id, relative)
-                        st.session_state.auth_farmer = db.get_farmer(farmer_id)
-                        st.session_state.adv_messages = []
-                        st.session_state.pop("adv_session_id", None)
+                        login_farmer(db.get_farmer(farmer_id))
                         st.rerun()
                     except ValueError as exc:
                         st.error(str(exc))
@@ -731,7 +801,6 @@ def render_auth_page() -> None:
                         st.error(f"Could not create the account: {exc}")
 
 
-@st.cache_resource(show_spinner=False)
 def ensure_schema() -> bool:
     if not db.db_configured():
         return False
@@ -742,13 +811,75 @@ def ensure_schema() -> bool:
         return False
 
 
-ensure_schema()
+if "schema_ready" not in st.session_state:
+    st.session_state.schema_ready = ensure_schema()
+
+restore_session()
 
 if not st.session_state.get("auth_farmer"):
     render_auth_page()
     st.stop()
 
 farmer = st.session_state.auth_farmer
+keep_session_alive()
+
+
+@st.cache_resource(show_spinner=False)
+def chunk_lookup() -> dict:
+    lookup = {}
+    path = PROJECT_ROOT / "rag_artifacts" / "export" / "chunks.jsonl"
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if line.strip():
+                    chunk = json.loads(line)
+                    lookup[chunk["chunk_id"]] = chunk
+    except Exception:
+        pass
+    return lookup
+
+
+def history_citations(raw) -> list:
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            return []
+    if not isinstance(raw, list):
+        return []
+    lookup = chunk_lookup()
+    citations = []
+    for item in raw:
+        if isinstance(item, dict) and item.get("title"):
+            citations.append(item)
+        elif isinstance(item, str) and item in lookup:
+            chunk = lookup[item]
+            citations.append({
+                "n": len(citations) + 1,
+                "chunk_id": item,
+                "title": chunk.get("title", item),
+                "source_id": chunk.get("source_id", ""),
+                "page": chunk.get("page", ""),
+                "snippet": chunk.get("text", "")[:280].strip(),
+            })
+    return citations
+
+
+def open_conversation(session_id: int) -> None:
+    rows = db.read_history(farmer["id"], session_id)
+    messages = []
+    for row in rows:
+        entry = {"role": row["role"], "content": row["message"]}
+        if row["role"] == "assistant":
+            entry["db_id"] = row["id"]
+            citations = history_citations(row.get("sources"))
+            if citations:
+                entry["citations"] = citations
+        messages.append(entry)
+    st.session_state.adv_messages = messages
+    st.session_state.adv_session_id = session_id
 
 
 # --------------------------------------------------------------------------- #
@@ -767,30 +898,44 @@ with st.sidebar:
     if farmer.get("preferred_lang"):
         st.caption("Swahili preferred" if farmer["preferred_lang"] == "sw" else "English preferred")
     if st.button("Log out", width="stretch"):
-        st.session_state.clear()
+        logout_farmer()
         st.rerun()
 
     st.markdown("---")
+    if st.button("New chat", width="stretch", type="primary"):
+        st.session_state.adv_messages = []
+        st.session_state.pop("adv_session_id", None)
+        st.toast("Started a new chat. Open the Maize Advisory tab to ask.")
+
     st.markdown("#### Your conversations")
     if not db.db_configured():
         st.caption("Your conversation history is unavailable because the database "
                    "is not configured.")
     else:
         try:
-            conversations = db.list_sessions(farmer["id"])
+            conversations = db.list_sessions(farmer["id"], limit=30)
         except Exception as exc:
             conversations = []
             st.caption(f"Could not load your conversations: {exc}")
         if conversations:
+            active_id = st.session_state.get("adv_session_id")
             for convo in conversations:
                 topic = (convo.get("topic") or "New conversation").strip()
-                if len(topic) > 64:
-                    topic = topic[:61].rstrip() + "..."
+                if len(topic) > 48:
+                    topic = topic[:45].rstrip() + "..."
                 when = (
                     convo["started_at"].strftime("%d %b %Y")
                     if convo.get("started_at") else ""
                 )
-                st.markdown(f"- {topic}  \n  {when}")
+                label = f"{'● ' if convo['id'] == active_id else ''}{topic}"
+                if st.button(label, key=f"convo_{convo['id']}", width="stretch",
+                             help=f"Opened {when}. Click to read or continue this chat."):
+                    try:
+                        open_conversation(convo["id"])
+                    except Exception as exc:
+                        st.toast(f"Could not open that conversation: {exc}")
+                    else:
+                        st.rerun()
         else:
             st.caption("No conversations yet. Ask a question in the Maize Advisory tab.")
 

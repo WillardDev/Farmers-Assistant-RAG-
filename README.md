@@ -87,6 +87,7 @@ Source: [Kaggle — Corn or Maize Leaf Disease Dataset](https://www.kaggle.com/d
 | `farmers` | `id, full_name, email, password_hash, county, preferred_lang, profile_image, created_at` | Farmer accounts. `password_hash` is a salted PBKDF2-HMAC-SHA256 digest; `profile_image` is an optional path under `profile_images/` |
 | `chat_sessions` | `id, farmer_id, started_at, language` | One conversation thread |
 | `chat_messages` | `id, session_id, farmer_id, role, message, language, sources, feedback, created_at` | Full chat history, retrieved citations, feedback |
+| `login_tokens` | `token, farmer_id, last_seen` | Opaque tokens that remember a login across reloads; expire after 30 minutes of inactivity (`LOGIN_TTL_MINUTES`) |
 
 ## Project Structure
 
@@ -107,7 +108,7 @@ maize_disease/
 ├── rag_pipeline.py                    # chatbot inference module, imported by app.py
 ├── db.py                              # MySQL chat-history functions, imported by app.py
 ├── rag_data/                          # raw corpus + chunks.jsonl
-├── rag_artifacts/                     # vector index, config, evaluation + export bundle (export/)
+├── rag_artifacts/                     # vector index, config, evaluation, charts (figures/) + export bundle (export/)
 ├── profile_images/                    # uploaded profile pictures (git-ignored)
 ├── app.py                             # single-file Streamlit app (login, detection, advisory chat, metrics)
 ├── .env                               # local MySQL credentials (git-ignored)
@@ -131,7 +132,7 @@ python3 -m venv .venv
 
 On macOS the quickest repeatable command is just `.venv/bin/streamlit run app.py`. If you have activated the venv (`source .venv/bin/activate`), plain `streamlit run app.py` uses the venv too.
 
-The app is behind a login, so a database is **required**: farmers create an account (name, email, password, optional profile picture) and every conversation is saved against them.
+The app is behind a login, so a database is **required**: farmers create an account (name, email, password, optional profile picture) and every conversation is saved against them. A login survives a page reload for 30 minutes of inactivity (an opaque token in the URL, validated against `login_tokens`), and the sidebar lists saved conversations so any chat can be reopened and continued.
 
 1. **RAG export** — the advisory tab loads `rag_artifacts/export/` (produced by `RAG_Advisory_Chatbot.ipynb` section 11). Run that notebook once if the folder is missing.
 2. **Database** — copy `.env.example` to `.env` and set the `MYSQL_*` values. Create the database and a dedicated user once:
@@ -178,3 +179,5 @@ Passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes (Python standard l
 - **10. Error Reduction**
 - **11. Export**
 - **12. Database & Chat History**
+
+The notebook draws one chart per finding under `rag_artifacts/figures/`: similarity of real vs junk questions (6.2), the five retrieval systems (7.5), per-question ranks (7.6), time per stage (8.6) and flags before and after the fixes (10.7).
