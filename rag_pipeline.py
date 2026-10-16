@@ -58,6 +58,23 @@ TOPIC_WORDS = [
     "kupanda", "dalili", "tiba", "kuzuia", "ipil",
 ]
 
+REFERENTIAL = re.compile(
+    r"\b(it|its|they|them|their|that|this|these|those|the same|the above"
+    r"|hii|hiyo|hizi|hizo|huo|hayo|hao|wao|yake|wake|zao)\b", re.I
+)
+
+LIST_TRIGGER = r"(list|enumerate|name|what are|which are|all|aina|gani|yapi|ipi|zipi)"
+LIST_NOUN = (r"(diseases?|pests?|insects?|weeds?|varieties?|varieti|symptoms?"
+             r"|problems?|magonjwa|wadudu|dalili)")
+LIST_NOUN_EN = {"magonjwa": "diseases", "wadudu": "pests", "dalili": "symptoms",
+                "varieti": "varieties"}
+
+LIST_INTENT = re.compile(
+    r"\b" + LIST_TRIGGER + r"\b.{0,60}?\b" + LIST_NOUN + r"\b"
+    r"|\b" + LIST_NOUN + r"\b.{0,60}?\b" + LIST_TRIGGER + r"\b",
+    re.I | re.S
+)
+
 REFUSAL_RULES = [
     ("live_prices", [r"\bprices?\b", r"how much is", r"\bbei\b", r"ruzuku",
                      r"subsid", r"market rate"]),
@@ -88,6 +105,8 @@ REFUSALS = {
     },
 }
 
+REFUSAL_TEXTS = {text for category in REFUSALS.values() for text in category.values()}
+
 PROMPT_TEMPLATE = """You are the Kenya Maize Advisory Chatbot, an assistant for smallholder maize farmers.
 
 Answer ONLY from the numbered sources below.
@@ -97,6 +116,9 @@ Answer ONLY from the numbered sources below.
 - For pesticides, only state what the source says (product, rate, waiting period) and add a wear-gloves/wash warning.
 - Answer the LATEST question. If it is a follow-up, use the conversation to work out what it refers to, keep the same subject, and do NOT repeat or reword an earlier answer.
 - Use the conversation so far only to understand the latest question; the facts must still come from the sources.
+- If the question asks for a list, include every relevant item named in the sources, not only the first one.
+- Do not copy apologies, refusals or "I cannot" phrasing out of the conversation; if the sources answer the latest question, answer it.
+- Never describe yourself as an AI model and never name your developer.
 - End every answer with: "For decisions that affect your harvest, consult your county extension officer."
 {history}
 Sources:
@@ -115,13 +137,23 @@ def mentions_topic(text: str) -> bool:
     return bool(re.search(r"\b(" + "|".join(TOPIC_WORDS) + ")", text.lower()))
 
 
+def is_follow_up(question: str) -> bool:
+    text = question.lower()
+    words = re.findall(r"[a-z0-9']+", text)
+    if mentions_topic(text) and len(words) > 4:
+        return False
+    if REFERENTIAL.search(text):
+        return True
+    return len(words) <= 4
+
+
 def refuse(question: str, has_context: bool = False):
     text = question.lower()
     lang = "sw" if looks_swahili(question) else "en"
     for category, patterns in REFUSAL_RULES:
         if any(re.search(pattern, text) for pattern in patterns):
             return REFUSALS[category][lang]
-    if not mentions_topic(text) and not has_context:
+    if not mentions_topic(text) and not (has_context and is_follow_up(question)):
         return REFUSALS["off_topic"][lang]
     return None
 
@@ -274,14 +306,43 @@ class AdvisoryPipeline:
         ranked = sorted(votes, key=votes.get, reverse=True)[:k]
         return [(chunk_id, votes[chunk_id]) for chunk_id in ranked]
 
-    def hybrid_search(self, query: str, k: int = TOP_K):
+    def _diversify(self, fused, k: int, cap: int):
+        counts = {}
+        picked = []
+        overflow = []
+        for chunk_id, score in fused:
+            source_id = self._by_id[chunk_id]["source_id"]
+            if counts.get(source_id, 0) < cap:
+                counts[source_id] = counts.get(source_id, 0) + 1
+                picked.append((chunk_id, score))
+                if len(picked) == k:
+                    return picked
+            else:
+                overflow.append((chunk_id, score))
+        return (picked + overflow)[:k]
+
+    def hybrid_search(self, query: str, k: int = TOP_K, per_source_cap: int | None = None):
         cfg = self.config["hybrid"]
         depth = cfg["depth"]
-        dense_ranks = [chunk["chunk_id"] for _, chunk in self.search(query, k * depth)]
-        sparse_ranks = [chunk["chunk_id"] for _, chunk in self.bm25_search(query, k * depth)]
-        fused = self.fuse_ranks(dense_ranks, sparse_ranks, k=k,
+        pool = k * 4 if per_source_cap else k
+        dense_ranks = [chunk["chunk_id"] for _, chunk in self.search(query, pool * depth)]
+        sparse_ranks = [chunk["chunk_id"] for _, chunk in self.bm25_search(query, pool * depth)]
+        fused = self.fuse_ranks(dense_ranks, sparse_ranks, k=pool,
                                 dense_weight=cfg["dense_weight"], depth=depth, rrf_k=cfg["rrf_k"])
-        return [(score, self._by_id[chunk_id]) for chunk_id, score in fused]
+        if per_source_cap:
+            fused = self._diversify(fused, k, per_source_cap)
+        return [(score, self._by_id[chunk_id]) for chunk_id, score in fused[:k]]
+
+    def _merge(self, queries: list[str], k: int, per_source_cap: int | None = None):
+        votes = {}
+        for query in queries:
+            for rank, (_, chunk) in enumerate(self.hybrid_search(query, k, per_source_cap), start=1):
+                chunk_id = chunk["chunk_id"]
+                votes[chunk_id] = votes.get(chunk_id, 0) + 1 / (30 + rank)
+        fused = sorted(votes.items(), key=lambda item: item[1], reverse=True)
+        if per_source_cap:
+            fused = self._diversify(fused, k, per_source_cap)
+        return [(score, self._by_id[chunk_id]) for chunk_id, score in fused[:k]]
 
     def translate_to_english(self, text: str) -> str:
         tokens = self.sw_tokenizer(text, return_tensors="pt", truncation=True,
@@ -300,7 +361,8 @@ class AdvisoryPipeline:
             forced_bos_token_id=self.en_tokenizer.convert_tokens_to_ids("swh_Latn"))
         return self.en_tokenizer.decode(output[0], skip_special_tokens=True)
 
-    def retrieve(self, query: str, k: int = TOP_K, context: list[str] | None = None):
+    def retrieve(self, query: str, k: int = TOP_K, context: list[str] | None = None,
+                 per_source_cap: int | None = None):
         routed = self.translate_to_english(query) if looks_swahili(query) else query
         search_query = routed
         if context:
@@ -310,7 +372,19 @@ class AdvisoryPipeline:
                     previous = self.translate_to_english(previous)
                 recent.append(previous)
             search_query = " ".join(recent + [routed])
-        return routed, self.hybrid_search(search_query, k)
+        return routed, self.hybrid_search(search_query, k, per_source_cap)
+
+    def _context_turns(self, question: str, history: list[dict]) -> list[str]:
+        if not is_follow_up(question):
+            return []
+        for turn in reversed(history):
+            if turn.get("role") != "user":
+                continue
+            text = turn.get("content", "")
+            if refuse(text, has_context=True) or not mentions_topic(text):
+                continue
+            return [text]
+        return []
 
     def build_prompt(self, question: str, hits, history=None) -> str:
         context = "\n\n".join(
@@ -319,9 +393,14 @@ class AdvisoryPipeline:
         )
         history_text = ""
         if history:
-            lines = [f"{'User' if turn['role'] == 'user' else 'Assistant'}: {turn['content']}"
-                     for turn in history[-6:]]
-            history_text = "\nConversation so far (for context only):\n" + "\n".join(lines) + "\n"
+            lines = []
+            for turn in history[-6:]:
+                content = turn["content"].strip()
+                if turn["role"] == "assistant" and content in REFUSAL_TEXTS:
+                    continue
+                lines.append(f"{'User' if turn['role'] == 'user' else 'Assistant'}: {content}")
+            if lines:
+                history_text = "\nConversation so far (for context only):\n" + "\n".join(lines) + "\n"
         return PROMPT_TEMPLATE.format(context=context, question=question, history=history_text)
 
     def generate(self, prompt: str, max_new_tokens: int = 400) -> str:
@@ -348,23 +427,37 @@ class AdvisoryPipeline:
             self.load()
 
         history = history or []
-        prior_user = [turn["content"] for turn in history if turn.get("role") == "user"]
+        context = self._context_turns(question, history)
 
-        refusal = refuse(question, has_context=bool(prior_user))
+        refusal = refuse(question, has_context=bool(history))
         if refusal:
             return {"question": question, "answer": refusal, "sources": [],
                     "citations": [], "english_query": None, "refused": True, "problems": [],
                     "translated": False, "language": "sw" if looks_swahili(question) else "en"}
 
-        english_query, hits = self.retrieve(question, k, context=prior_user)
+        list_question = bool(LIST_INTENT.search(question))
+        k_use = min(k * 3, 15) if list_question else k
+        cap = 2 if list_question else None
+        max_tokens = 700 if list_question else 400
+
+        if list_question:
+            noun_match = re.search(LIST_NOUN, question, re.I)
+            noun = noun_match.group(1).lower() if noun_match else "diseases"
+            noun = LIST_NOUN_EN.get(noun, noun)
+            english_query = self.translate_to_english(question) if looks_swahili(question) else question
+            probe = f"maize {noun} list identification symptoms"
+            hits = self._merge([english_query, probe], k_use, cap)
+        else:
+            english_query, hits = self.retrieve(question, k_use, context=context, per_source_cap=cap)
+
         prompt = self.build_prompt(english_query, hits, history)
-        answer = self.generate(prompt)
+        answer = self.generate(prompt, max_new_tokens=max_tokens)
         problems = validate_answer(answer, question, len(hits))
 
         if problems:
             retry_prompt = prompt + ("\n\nCite every claim with [n] and end with the exact "
                                      "disclaimer sentence.")
-            answer = self.generate(retry_prompt)
+            answer = self.generate(retry_prompt, max_new_tokens=max_tokens)
             problems = validate_answer(answer, question, len(hits))
 
         if looks_swahili(question) and not looks_swahili(answer):
