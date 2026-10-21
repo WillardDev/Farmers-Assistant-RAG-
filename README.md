@@ -104,7 +104,7 @@ maize_disease/
 │   └── maize_disease_yolo26s.pt       # final trained model - TRACKED IN GIT, the app needs it
 ├── pdfs/                             # RAG knowledge base (source PDFs)
 ├── Maize_Disease_Detection_YOLO.ipynb # image classification pipeline (sections 0-11)
-├── RAG_Advisory_Chatbot.ipynb         # RAG chatbot pipeline (12 sections)
+├── RAG_Advisory_Chatbot.ipynb         # RAG chatbot pipeline (13 sections)
 ├── rag_pipeline.py                    # chatbot inference module, imported by app.py
 ├── db.py                              # MySQL chat-history functions, imported by app.py
 ├── rag_data/                          # raw corpus + chunks.jsonl
@@ -134,7 +134,7 @@ On macOS the quickest repeatable command is just `.venv/bin/streamlit run app.py
 
 The app is behind a login, so a database is **required**: farmers create an account (name, email, password, optional profile picture) and every conversation is saved against them. A login survives a page reload for 30 minutes of inactivity (an opaque token in the URL, validated against `login_tokens`), and the sidebar lists saved conversations so any chat can be reopened and continued.
 
-1. **RAG export** — the advisory tab loads `rag_artifacts/export/` (produced by `RAG_Advisory_Chatbot.ipynb` section 11). Run that notebook once if the folder is missing.
+1. **RAG export** — the advisory tab loads `rag_artifacts/export/` (produced by `RAG_Advisory_Chatbot.ipynb` section 12). Run that notebook once if the folder is missing.
 2. **Database** — copy `.env.example` to `.env` and set the `MYSQL_*` values. Create the database and a dedicated user once:
 
    ```sql
@@ -177,7 +177,7 @@ Passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes (Python standard l
 - **8. Inference Pipeline**
 - **9. Error Analysis**
 - **10. Error Reduction**
-- **11. Export**
-- **12. Database & Chat History**
-
-The notebook draws one chart per finding under `rag_artifacts/figures/`: similarity of real vs junk questions (6.2), the five retrieval systems (7.5), per-question ranks (7.6), time per stage (8.6) and flags before and after the fixes (10.7).
+- **11. Generation Settings: Temperature**
+  - *Temperature sweep, metrics, chart and conservative decision rule*
+- **12. Export**
+- **13. Database & Chat History**

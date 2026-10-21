@@ -1,0 +1,345 @@
+[
+  {
+    "temperature": 0.0,
+    "run": 0,
+    "elapsed_seconds": 184.95,
+    "rows": [
+      {
+        "question": "What are the symptoms of common rust?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "weak claim support"
+        ],
+        "answer": "Small, oval-to-elongated cinnamon-brown pustules scattered on both leaf surfaces, raised and powdery to the touch. Leaves yellow and senesce early when pustule density is high, causing serious defoliation. [1]\n\nWear gloves and wash hands thoroughly after handling any agricultural chemicals. [2]\n\nFor decisions that affect your harvest, consult your county extension officer. [3] For decisions that a"
+      },
+      {
+        "question": "How do I manage grey leaf spot?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation",
+          "pesticide advice without an application rate"
+        ],
+        "answer": "To manage grey leaf spot, you should follow these steps:\n\n1. **Minimize Canopy Density**: Reducing the height of the maize plants will help decrease the exposure of the leaves to moisture and sunlight, thereby reducing the likelihood of infections.\n\n2. **Plant Resistant Varieties**: Planting maize varieties that are resistant to grey leaf spot can significantly reduce the risk of this disease affe"
+      },
+      {
+        "question": "How much basal fertiliser should I apply at planting?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation"
+        ],
+        "answer": "According to the Maize Growers Guide (S02, page 4), the basal fertiliser must be applied before or at the time of planting, preferably cupped into the planting hole, or applied in a band below and to the side of the seed with the mechanical planter. The top dressing should be applied when the maize at 3.5 to 6 Weeks After crop Emergence-WACE. Top dressing splits may be recommended in sandy to sand"
+      },
+      {
+        "question": "When should I plant maize in Kenya?",
+        "refused": false,
+        "abstained": false,
+        "flags": [],
+        "answer": "When planting maize in Kenya, consider the following factors:\n\n- **Rainfall Pattern**: Maize cultivation tends to be more prevalent in areas with a bimodal rainfall pattern due to higher population pressure and higher chances of rain failure.\n- **Temperature and Moisture Regimes**: These factors influence maize development and maturity times, affecting planting decisions.\n- **Reliability of Rainfa"
+      },
+      {
+        "question": "How much rainfall does maize need?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation"
+        ],
+        "answer": "Maize needs approximately 600 liters of water per kilogram of grain produced. Well-distributed rain throughout the growing cycle is sufficient to produce a good crop. However, maize's water requirements vary depending on factors such as plant density and soil type. For instance, maize grown under dense conditions requires less water compared to maize planted in sparse stands. Additionally, maize p"
+      },
+      {
+        "question": "Ni mbolea gani inafaa kwa mahindi?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation"
+        ],
+        "answer": "Mwongozo wa wakulima wa mahindi unasema kuwa virutubisho viwili muhimu zaidi kwa mahindi ni nitrojeni na fosforasi, lakini mahindi pia inahitaji potasiamu na, kwenye udongo fulani, zinki kwa kiasi kidogo. Mwongozo unapendekeza kuzingatia mbolea zisizo za kikaboni zilizonunuliwa kama virutubisho vya mahindi. For decisions that affect your harvest, consult your county extension officer."
+      },
+      {
+        "question": "What is the price of a bag of maize in Kisumu today?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "I do not have live market prices or subsidy information - my sources are static documents. Check today's prices with your local produce buyer, the county market office, or the e-Mkulima platform."
+      },
+      {
+        "question": "Can maize cure malaria in humans?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "I only advise on growing maize. Questions about human health should go to a clinic or hospital."
+      },
+      {
+        "question": "Who won the 2022 football world cup?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "I only answer questions about growing maize in Kenya - diseases, planting, fertiliser, pests, harvest and storage. Ask me about maize!"
+      },
+      {
+        "question": "Bei ya mahindi leo ni ngapi?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "Sina bei za soko za sasa wala taarifa za ruzuku - vyanzo vyangu ni vitabu vya zamani. Uliza mnunuzi wako wa mazao, ofisi ya soko ya kaunti, au tumia jukwaa la e-Mkulima."
+      },
+      {
+        "question": "What is the exact dosage of SuperMaize fungicide for northern leaf blight?",
+        "refused": false,
+        "abstained": true,
+        "flags": [],
+        "answer": "I could not find the answer in the sources I have. For a definitive answer, consult your county extension officer. For decisions that affect your harvest, consult your county extension officer."
+      },
+      {
+        "question": "What is the phone number of the Nakuru county extension officer?",
+        "refused": false,
+        "abstained": true,
+        "flags": [],
+        "answer": "I could not find the answer in the sources I have. For a definitive answer, consult your county extension officer. For decisions that affect your harvest, consult your county extension officer."
+      },
+      {
+        "question": "How many millimetres of rain fell in Nakuru in May 2024?",
+        "refused": false,
+        "abstained": true,
+        "flags": [],
+        "answer": "I could not find the answer in the sources I have. For a definitive answer, consult your county extension officer. For decisions that affect your harvest, consult your county extension officer."
+      }
+    ]
+  },
+  {
+    "temperature": 0.3,
+    "run": 0,
+    "elapsed_seconds": 208.67,
+    "rows": [
+      {
+        "question": "What are the symptoms of common rust?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "weak claim support"
+        ],
+        "answer": "Small, oval-to-elongated cinnamon-brown pustules scattered on both leaf surfaces, raised and powdery to the touch. Leaves yellow and senesce early when pustule density is high, causing serious defoliation. [1]\n\nWear gloves/wash hands thoroughly after handling any agricultural chemicals. [2]\n\nFor decisions that affect your harvest, consult your county extension officer. [3] For decisions that affec"
+      },
+      {
+        "question": "How do I manage grey leaf spot?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation",
+          "pesticide advice without an application rate"
+        ],
+        "answer": "To manage gray leaf spot, you should follow these steps:\n\n1. **Minimize Canopy Density**: Reducing the height of the canopy will help decrease the exposure of leaves to favorable conditions for gray leaf spot development, such as warm, humid weather and dense foliage.\n\n2. **Plant Resistant Hybrids**: Planting maize varieties that are resistant to gray leaf spot can significantly reduce the risk of"
+      },
+      {
+        "question": "How much basal fertiliser should I apply at planting?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation",
+          "unsupported numbers: 350 kg"
+        ],
+        "answer": "According to the Maize Growers Guide (S02, page 4), the basal fertiliser must be applied before or at the time of planting, preferably cupped into the planting hole, or applied in a band below and to the side of the seed with the mechanical planter. The product mentioned is 7:14:7, and the rate is 250 to 350 kg/ha. Additionally, the guide states that a maximum of 3 usually is ideal. For decisions "
+      },
+      {
+        "question": "When should I plant maize in Kenya?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation"
+        ],
+        "answer": "In Kenya, maize should ideally be planted based on the local climate and soil conditions. According to the sources provided, maize cultivation tends to occur in areas with a bimodal rainfall pattern, particularly in semi-arid and dry zones. Farmers usually plant maize twice a year, depending on the availability of land and resources. The planting window varies across different regions, with some a"
+      },
+      {
+        "question": "How much rainfall does maize need?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation"
+        ],
+        "answer": "Maize needs approximately 600 liters of water per kilogram of grain to produce 1 kilogram of maize grain. This includes the moisture retained in the soil before planting, the rainfall during the crop season, from irrigation, and in lesser amounts from dew condensed on the leaves that is funnelled by the leaf blades and stems to the base of the plant. Well-distributed rain throughout the growing cy"
+      },
+      {
+        "question": "Ni mbolea gani inafaa kwa mahindi?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation"
+        ],
+        "answer": "Mazao yanahitaji mchanganyiko wa usawa wa virutubisho pamoja na nitrojeni, fosforasi, potasiamu, na wakati mwingine zinki. Kulingana na Mwongozo wa Wakulima wa Mazao (ukurasa 3): \"Uzalishaji wa uwezo hutegemea sana aina, mvua inayotarajiwa, na usimamizi uliotumiwa kwa mazao. Kuongezea mbolea na majivu kutasaidia sana majibu ya mahindi kwa mbolea inayotumika\". Kwa hivyo, usawa wa aina tofauti za mb"
+      },
+      {
+        "question": "What is the price of a bag of maize in Kisumu today?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "I do not have live market prices or subsidy information - my sources are static documents. Check today's prices with your local produce buyer, the county market office, or the e-Mkulima platform."
+      },
+      {
+        "question": "Can maize cure malaria in humans?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "I only advise on growing maize. Questions about human health should go to a clinic or hospital."
+      },
+      {
+        "question": "Who won the 2022 football world cup?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "I only answer questions about growing maize in Kenya - diseases, planting, fertiliser, pests, harvest and storage. Ask me about maize!"
+      },
+      {
+        "question": "Bei ya mahindi leo ni ngapi?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "Sina bei za soko za sasa wala taarifa za ruzuku - vyanzo vyangu ni vitabu vya zamani. Uliza mnunuzi wako wa mazao, ofisi ya soko ya kaunti, au tumia jukwaa la e-Mkulima."
+      },
+      {
+        "question": "What is the exact dosage of SuperMaize fungicide for northern leaf blight?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation",
+          "should have refused"
+        ],
+        "answer": "The exact dosage of SuperMaize fungicide for northern leaf blight is not specified in the given sources. It is recommended to follow the manufacturer's instructions or use a product labeled for northern leaf blight management. For decisions that affect your harvest, consult your county extension officer."
+      },
+      {
+        "question": "What is the phone number of the Nakuru county extension officer?",
+        "refused": false,
+        "abstained": true,
+        "flags": [],
+        "answer": "I could not find the answer in the sources I have. For a definitive answer, consult your county extension officer. For decisions that affect your harvest, consult your county extension officer."
+      },
+      {
+        "question": "How many millimetres of rain fell in Nakuru in May 2024?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation",
+          "should have refused"
+        ],
+        "answer": "I'm sorry, but I don't have enough information to determine how much rain fell in Nakuru specifically in May 2024 based on the provided sources. These sources focus on general agricultural trends across Kenya rather than detailed local rainfall data. Therefore, my advice would be to consult a county extension officer for this specific query. For decisions that affect your harvest, consult your cou"
+      }
+    ]
+  },
+  {
+    "temperature": 0.3,
+    "run": 1,
+    "elapsed_seconds": 205.31,
+    "rows": [
+      {
+        "question": "What are the symptoms of common rust?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation",
+          "pesticide advice without an application rate"
+        ],
+        "answer": "Small, oval-to-elongated cinnamon-brown pustules scattered on both leaf surfaces, raised and powdery to the touch. Leaves yellow and senesce early when pustule density is high, causing serious defoliation. Favourable conditions: Cool, moist conditions (16-25°C) with high relative humidity and frequent dew. Management: Use resistant hybrids wherever available - this is by far the cheapest control. "
+      },
+      {
+        "question": "How do I manage grey leaf spot?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation",
+          "pesticide advice without an application rate"
+        ],
+        "answer": "To manage grey leaf spot, you should follow these steps:\n\n1. **Reduce Canopy Density**: Lowering the height of the maize plants can help reduce the exposure of leaves to moisture, thereby decreasing the likelihood of infections.\n   \n2. **Plant Resistant Hybrids**: Selecting maize varieties that are resistant to grey leaf spot can significantly reduce the risk of this disease affecting your crop.\n\n"
+      },
+      {
+        "question": "How much basal fertiliser should I apply at planting?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation"
+        ],
+        "answer": "According to the Maize Growers Guide (S02, page 4), the basal fertiliser must be applied before or at the time of planting, preferably cupped into the planting hole, or applied in a band below and to the side of the seed with the mechanical planter. The product mentioned is not specified in this guide. However, based on general agricultural practices, you should apply a basal fertiliser containing"
+      },
+      {
+        "question": "When should I plant maize in Kenya?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation"
+        ],
+        "answer": "When you want to plant maize in Kenya, consider the following factors:\n\n1. **Rainfall Pattern**: Maize cultivation is influenced by the rainfall pattern, particularly the timing of the rains. In semi-arid and dry TNZ zones, maize is typically planted early to take advantage of the first rains. However, in areas with high rainfall variability, farmers must time their planting more precisely to avoi"
+      },
+      {
+        "question": "How much rainfall does maize need?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation"
+        ],
+        "answer": "Maize needs approximately 600 liters of water per kilogram of grain to produce 1 kilogram of maize grain. This includes the moisture retained in the soil before planting, the rainfall during the crop season, from irrigation, and in less amounts from dew condensed on the leaves that is funnelled by the leaf blades and stems to the base of the plant. The main sources for the maize crop may come from"
+      },
+      {
+        "question": "Ni mbolea gani inafaa kwa mahindi?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation",
+          "unsupported numbers: 500."
+        ],
+        "answer": "Mwongozo wa wakulima wa mahindi (S02, ukurasa 2) unasema kwamba mahindi hukua vizuri kwenye udongo wa kina, ulioondolewa vizuri, na wa rutuba, na ambapo jumla ya mvua ya msimu huzidi mm 500. Inataja kwamba mahindi ni uvumilivu wa kiasi kwa asidi ya udongo, lakini ikiwa udongo ni asidi sana, limeing itaboresha udongo na kuongeza mavuno ya mahindi. Kwa hivyo, kulingana na vigezo hivi, limeing itakuw"
+      },
+      {
+        "question": "What is the price of a bag of maize in Kisumu today?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "I do not have live market prices or subsidy information - my sources are static documents. Check today's prices with your local produce buyer, the county market office, or the e-Mkulima platform."
+      },
+      {
+        "question": "Can maize cure malaria in humans?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "I only advise on growing maize. Questions about human health should go to a clinic or hospital."
+      },
+      {
+        "question": "Who won the 2022 football world cup?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "I only answer questions about growing maize in Kenya - diseases, planting, fertiliser, pests, harvest and storage. Ask me about maize!"
+      },
+      {
+        "question": "Bei ya mahindi leo ni ngapi?",
+        "refused": true,
+        "abstained": false,
+        "flags": [],
+        "answer": "Sina bei za soko za sasa wala taarifa za ruzuku - vyanzo vyangu ni vitabu vya zamani. Uliza mnunuzi wako wa mazao, ofisi ya soko ya kaunti, au tumia jukwaa la e-Mkulima."
+      },
+      {
+        "question": "What is the exact dosage of SuperMaize fungicide for northern leaf blight?",
+        "refused": false,
+        "abstained": false,
+        "flags": [
+          "no citation",
+          "should have refused"
+        ],
+        "answer": "The exact dosage of SuperMaize fungicide for northern leaf blight is not specified in the given sources. It is recommended to follow the manufacturer's instructions or use a product labeled for northern leaf blight management. For decisions that affect your harvest, consult your county extension officer."
+      },
+      {
+        "question": "What is the phone number of the Nakuru county extension officer?",
+        "refused": false,
+        "abstained": true,
+        "flags": [],
+        "answer": "I could not find the answer in the sources I have. For a definitive answer, consult your county extension officer. For decisions that affect your harvest, consult your county extension officer."
+      },
+      {
+        "question": "How many millimetres of rain fell in Nakuru in May 2024?",
+        "refused": false,
+        "abstained": true,
+        "flags": [],
+        "answer": "I could not find the answer in the sources I have. For a definitive answer, consult your county extension officer. For decisions that affect your harvest, consult your county extension officer."
+      }
+    ]
+  }
+]
