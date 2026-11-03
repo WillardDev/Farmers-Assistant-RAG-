@@ -164,7 +164,17 @@ The repository is already wired for it (`.streamlit/config.toml`, `packages.txt`
 
    Community Cloud keeps secrets in `st.secrets` and does **not** export them as environment variables, so `db.py` copies them into `os.environ` at import time (`_hydrate_from_streamlit_secrets`). A `[mysql]` section works too. Save, then reboot the app.
 
-2. **A reachable database.** A local MySQL (`MYSQL_HOST=localhost`) is not reachable from Cloud. Use a hosted instance (Aiven, Railway, TiDB Cloud, a VPS) and allow Streamlit's egress. Accounts created against your local database do not exist in the cloud one, so sign up again on the deployed app.
+   Hosted providers that require TLS (Aiven, TiDB Cloud, most managed MySQL) also need their CA certificate:
+
+   ```toml
+   MYSQL_SSL_CA = """-----BEGIN CERTIFICATE-----
+   ...
+   -----END CERTIFICATE-----"""
+   ```
+
+   `MYSQL_SSL_CA` accepts the PEM text or a path; `MYSQL_SSL_DISABLED = "1"` turns TLS off for servers that do not offer it.
+
+2. **A reachable database.** A local MySQL (`MYSQL_HOST=localhost`) is not reachable from Cloud - that address is the app's own container, so the app fails with `2003: Can't connect to MySQL server on 'localhost:3306'`. Use a hosted instance (Aiven, TiDB Cloud, Railway, a VPS) that accepts remote connections, and allow Streamlit's egress (or `0.0.0.0/0` while testing). Accounts created against your local database do not exist in the cloud one, so sign up again on the deployed app.
 
 **Memory.** Community Cloud caps an app at roughly 2.7 GB of RAM and 2 CPU cores. The classifier alone (`ultralytics` + torch) needs about 0.6-0.9 GB, so detection fits. The advisory tab does not: `multilingual-e5-small` (fp32, ~0.5 GB), `nllb-200-distilled-600M` (fp32, ~2.5 GB) and `Qwen2.5-1.5B-Instruct` (fp16, ~3.1 GB) add up to about 6 GB of weights in one process. Because they load lazily on the first question, the app looks healthy until someone asks one - then it is killed for exceeding the limit and the whole app restarts, detection included. To keep the chat on Community Cloud, drop `nllb-200` (let the generator translate) and use a smaller or quantized generator; otherwise move generation to a hosted inference API. Educational and non-profit projects can also apply for increased resources.
 

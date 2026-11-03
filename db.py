@@ -25,6 +25,8 @@ import json
 import os
 import re
 import secrets
+import tempfile
+from pathlib import Path
 
 try:
     from dotenv import load_dotenv
@@ -44,7 +46,8 @@ DB_ENV_KEYS = ("MYSQL_HOST", "MYSQL_DATABASE", "MYSQL_USER", "MYSQL_PASSWORD")
 
 #: Everything read from the environment that can also arrive as a Streamlit
 #: secret: the MySQL settings plus the Hugging Face token used by the RAG stack.
-SECRET_ENV_KEYS = (*DB_ENV_KEYS, "MYSQL_PORT", "HF_TOKEN")
+SECRET_ENV_KEYS = (
+    *DB_ENV_KEYS, "MYSQL_PORT", "MYSQL_SSL_CA", "MYSQL_SSL_DISABLED", "HF_TOKEN")
 
 
 def _hydrate_from_streamlit_secrets() -> None:
@@ -150,6 +153,35 @@ def db_configured() -> bool:
     return all(os.environ.get(key) is not None for key in DB_ENV_KEYS)
 
 
+_SSL_CA_PATH: str | None = None
+
+
+def _ssl_options() -> dict:
+    """TLS settings for managed MySQL providers.
+
+    Aiven, TiDB Cloud and most other hosted MySQL services refuse plaintext
+    connections and give you a ``ca.pem``. Streamlit Cloud has no writable
+    checkout, so ``MYSQL_SSL_CA`` may be either a path that exists on the host
+    or the PEM text itself (paste it into *Secrets*); connector-python only
+    accepts a path, so PEM text is written once to the temp directory.
+    """
+    global _SSL_CA_PATH
+
+    ca = (os.environ.get("MYSQL_SSL_CA") or "").strip()
+    if ca:
+        if "BEGIN CERTIFICATE" in ca:
+            if _SSL_CA_PATH is None:
+                path = Path(tempfile.gettempdir()) / "mysql_ca.pem"
+                path.write_text(ca, encoding="utf-8")
+                _SSL_CA_PATH = str(path)
+            ca = _SSL_CA_PATH
+        return {"ssl_ca": ca, "ssl_verify_cert": True}
+
+    if (os.environ.get("MYSQL_SSL_DISABLED") or "").lower() in {"1", "true", "yes"}:
+        return {"ssl_disabled": True}
+    return {}
+
+
 @contextlib.contextmanager
 def db_connection():
     if mysql is None:
@@ -159,15 +191,27 @@ def db_connection():
     missing = [key for key in DB_ENV_KEYS if os.environ.get(key) is None]
     if missing:
         raise ValueError("Missing environment variables: " + ", ".join(missing))
-    connection = mysql.connector.connect(
-        host=os.environ["MYSQL_HOST"],
-        port=int(os.environ.get("MYSQL_PORT", "3306")),
-        database=os.environ["MYSQL_DATABASE"],
-        user=os.environ["MYSQL_USER"],
-        password=os.environ.get("MYSQL_PASSWORD", ""),
-        charset="utf8mb4",
-        autocommit=False,
-    )
+    host = os.environ["MYSQL_HOST"]
+    try:
+        connection = mysql.connector.connect(
+            host=host,
+            port=int(os.environ.get("MYSQL_PORT", "3306")),
+            database=os.environ["MYSQL_DATABASE"],
+            user=os.environ["MYSQL_USER"],
+            password=os.environ.get("MYSQL_PASSWORD", ""),
+            charset="utf8mb4",
+            autocommit=False,
+            connection_timeout=int(os.environ.get("MYSQL_CONNECT_TIMEOUT", "10")),
+            **_ssl_options(),
+        )
+    except mysql.connector.Error as exc:
+        if exc.errno == 2003 and host in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError(
+                f"MySQL at {host} is not reachable. On Streamlit Community Cloud "
+                "localhost is the app container, not your computer - set MYSQL_HOST "
+                "to a hosted database that accepts remote connections."
+            ) from exc
+        raise
     try:
         yield connection
         connection.commit()
