@@ -41,6 +41,60 @@ except ImportError:
 from rag_pipeline import looks_swahili
 
 DB_ENV_KEYS = ("MYSQL_HOST", "MYSQL_DATABASE", "MYSQL_USER", "MYSQL_PASSWORD")
+
+#: Everything read from the environment that can also arrive as a Streamlit
+#: secret: the MySQL settings plus the Hugging Face token used by the RAG stack.
+SECRET_ENV_KEYS = (*DB_ENV_KEYS, "MYSQL_PORT", "HF_TOKEN")
+
+
+def _hydrate_from_streamlit_secrets() -> None:
+    """Copy Streamlit Community Cloud secrets into ``os.environ``.
+
+    Locally the connection details come from a ``.env`` file. On Community
+    Cloud there is no ``.env``: values typed into *App settings -> Secrets* live
+    in ``st.secrets`` and are **not** exported as environment variables. Without
+    this bridge a correctly filled-in dashboard still fails with ``Missing
+    environment variables: MYSQL_HOST, ...``.
+
+    Secrets are accepted both at the top level and inside an optional
+    ``[mysql]`` / ``[database]`` / ``[db]`` section, because both layouts are
+    common. A real environment variable always wins, so a local ``.env`` is
+    never overridden by a stale secret.
+    """
+    try:
+        import streamlit as st
+
+        secrets = st.secrets
+    except Exception:  # streamlit not installed, or no secrets.toml on this host
+        return
+
+    def lookup(key: str):
+        try:
+            value = secrets.get(key)
+        except Exception:
+            value = None
+        if value is not None:
+            return value
+        for section in ("mysql", "database", "db"):
+            try:
+                block = secrets.get(section)
+            except Exception:
+                continue
+            if isinstance(block, dict) and key in block:
+                return block[key]
+        return None
+
+    for key in SECRET_ENV_KEYS:
+        if os.environ.get(key) is not None:
+            continue
+        value = lookup(key)
+        if value is None or isinstance(value, (dict, list)):
+            continue
+        os.environ[key] = str(value)
+
+
+_hydrate_from_streamlit_secrets()
+
 PBKDF2_ITERATIONS = 200_000
 LOGIN_TTL_MINUTES = 30
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
