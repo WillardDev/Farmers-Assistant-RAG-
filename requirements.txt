@@ -37,6 +37,14 @@ sentencepiece==0.2.2
 mysql-connector-python==9.4.0
 python-dotenv==1.1.1
 
+# voice input/output for the advisory chat (voice.py)
+# faster-whisper pulls in ctranslate2 and av. av is pinned below 17 because
+# faster-whisper 1.2.1 still passes `metadata_errors` to av.open(), a keyword
+# that PyAV removed in 17.0 - without the pin, transcription fails at runtime
+# with "open() got an unexpected keyword argument 'metadata_errors'".
+faster-whisper==1.2.1
+av==16.1.0
+
 # NOTE: tensorflow 2.22.0rc0 and the versions above were used on Python 3.14,
 # where no stable TensorFlow release is available yet (keras-nightly was used
 # during development). On Python 3.11 or 3.12 install a stable tensorflow

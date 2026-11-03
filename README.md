@@ -106,6 +106,7 @@ maize_disease/
 ├── Maize_Disease_Detection_YOLO.ipynb # image classification pipeline (sections 0-11)
 ├── RAG_Advisory_Chatbot.ipynb         # RAG chatbot pipeline (13 sections)
 ├── rag_pipeline.py                    # chatbot inference module, imported by app.py
+├── voice.py                           # speech-to-text and text-to-speech, imported by app.py
 ├── db.py                              # MySQL chat-history functions, imported by app.py
 ├── rag_data/                          # raw corpus + chunks.jsonl
 ├── rag_artifacts/                     # vector index, config, evaluation, charts (figures/) + export bundle (export/)
@@ -146,6 +147,25 @@ The app is behind a login, so a database is **required**: farmers create an acco
    Or, for a local Homebrew MySQL whose `root` has no password, set `MYSQL_USER=root` and leave `MYSQL_PASSWORD` empty instead. The app creates the tables itself on first use.
 
 Passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes (Python standard library). The first advisory question loads three local models (`multilingual-e5-small`, `nllb-200-distilled-600M`, `Qwen2.5-1.5B-Instruct`) and can take about a minute; later questions are fast.
+
+## Voice input and output
+
+The advisory tab can be used by voice. Both directions run locally and free - no API key, no per-request cost - in `voice.py`.
+
+| Direction | Model | Size | Notes |
+|---|---|---|---|
+| Speech → text | `faster-whisper` `small`, int8, CPU | ~500 MB | Multilingual, so one model covers English and Kiswahili. Language is auto-detected and shown to the farmer. |
+| Text → speech | `facebook/mms-tts-eng` and `facebook/mms-tts-swh` | ~145 MB each | MMS VITS voices. Kiswahili is a native voice, not an English model reading Swahili text. |
+
+**Asking by voice.** The mic in the chat bar records, Whisper transcribes, and the transcript appears in an editable box. Nothing is sent until the farmer presses *Send question*. That confirmation step is deliberate: a mis-heard word changes which documents are retrieved, and generation takes tens of seconds, so correcting the transcript is far cheaper than re-asking. Whisper is also given a domain prompt (`VOICE_ASR_PROMPT`) with words like *mbolea*, *DAP* and *ekari*, which noticeably reduces domain-term errors.
+
+**Answers read aloud.** Every assistant message has a *Listen* button, and *Read new answers aloud* speaks each new answer automatically. `speakable()` strips `[1]` citation markers and markdown, expands units (`kg/acre` → "kilograms per acre"), and spells numbers, because the VITS voices read bare digits unreliably - especially in Kiswahili. The closing disclaimer is always read with the English voice, since `rag_pipeline` appends it verbatim in both languages.
+
+**Secure context.** The microphone, like the camera, only works on `localhost` or HTTPS. A phone reaching the app over plain `http://<lan-ip>:8501` gets no mic button.
+
+**Memory.** Voice adds roughly 0.8 GB on top of the advisory stack. That does not fit Streamlit Community Cloud's ~2.7 GB cap, which the chat already exceeds - see the deployment section below. `VOICE_ASR_MODEL=base` trims the speech model, but the real fix there is moving generation off the app container.
+
+Optional overrides live in `.env.example`: `VOICE_ASR_MODEL`, `VOICE_ASR_PROMPT`, `VOICE_TTS_EN`, `VOICE_TTS_SW`.
 
 ## Deploying to Streamlit Community Cloud
 

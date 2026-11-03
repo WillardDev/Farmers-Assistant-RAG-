@@ -14,6 +14,11 @@ for retrieval, ``nllb-200`` for the Swahili pivot and ``Qwen2.5-1.5B-Instruct``
 for generation. The chat carries the conversation so far, so follow-up questions
 like "so should I use phosphorus?" are understood in context.
 
+Questions can be typed or spoken. ``voice.py`` transcribes the microphone with
+Whisper and reads answers back with the MMS voices, so the tab is usable by a
+farmer who would rather talk than type. A recording is shown as editable text
+before it is sent, because a mis-heard question retrieves the wrong documents.
+
 The whole app sits behind a login. Farmer accounts (name, email, optional
 profile picture, PBKDF2-hashed password) and every conversation are stored in
 MySQL when the ``MYSQL_*`` environment variables are set (see ``db.py`` and the
@@ -73,6 +78,7 @@ import numpy as np
 import streamlit as st
 
 import db
+import voice
 from rag_pipeline import AdvisoryPipeline
 
 # --------------------------------------------------------------------------- #
@@ -880,6 +886,8 @@ def open_conversation(session_id: int) -> None:
         messages.append(entry)
     st.session_state.adv_messages = messages
     st.session_state.adv_session_id = session_id
+    st.session_state.adv_audio = {}
+    st.session_state.pop("adv_pending", None)
 
 
 # --------------------------------------------------------------------------- #
@@ -905,6 +913,8 @@ with st.sidebar:
     if st.button("New chat", width="stretch", type="primary"):
         st.session_state.adv_messages = []
         st.session_state.pop("adv_session_id", None)
+        st.session_state.adv_audio = {}
+        st.session_state.pop("adv_pending", None)
         st.toast("Started a new chat. Open the Maize Advisory tab to ask.")
 
     st.markdown("#### Your conversations")
@@ -1383,6 +1393,81 @@ def advisory_record_feedback(message_id: int, helpful: bool) -> None:
         st.toast(f"Could not record feedback: {exc}")
 
 
+def advisory_cache_audio(key: str, data: bytes) -> None:
+    """Keep the last few rendered answers so a rerun does not re-synthesise them."""
+    cache = st.session_state.setdefault("adv_audio", {})
+    cache.pop(key, None)
+    cache[key] = data
+    while len(cache) > 3:
+        cache.pop(next(iter(cache)))
+
+
+def advisory_speak(message: dict, key: str, autoplay: bool = False) -> bool:
+    """Render one assistant answer to speech and play it.
+
+    Returns ``True`` when audio is on screen. A missing TTS backend or a failed
+    synthesis shows a warning and returns ``False``; the text answer is never
+    affected.
+    """
+    cache = st.session_state.setdefault("adv_audio", {})
+    if key not in cache:
+        with st.spinner("Preparing the audio ..."):
+            try:
+                advisory_cache_audio(
+                    key,
+                    voice.synthesize_answer(
+                        message["content"], message.get("language")),
+                )
+            except voice.VoiceUnavailable as exc:
+                st.warning(str(exc))
+                return False
+    if not cache.get(key):
+        return False
+    st.audio(cache[key], format="audio/wav", autoplay=autoplay)
+    return True
+
+
+def advisory_turn(question: str) -> None:
+    """Run one question through the pipeline and append both turns to the chat."""
+    pipeline = advisory_pipeline()
+    history = [{"role": m["role"], "content": m["content"]}
+               for m in st.session_state.adv_messages]
+    result = None
+    try:
+        if not pipeline.is_loaded():
+            with st.spinner(
+                "Loading the advisory models. This happens on the first question "
+                "only and can take a minute."
+            ):
+                pipeline.load()
+        with st.spinner("Searching the documents and writing an answer ..."):
+            result = pipeline.ask(question, history=history)
+    except Exception as exc:
+        st.error(f"The advisory service is unavailable: {exc}")
+
+    if result is None:
+        return
+
+    entry = {
+        "role": "assistant",
+        "content": result["answer"],
+        "citations": result["citations"],
+        "language": result.get("language"),
+    }
+    st.session_state.adv_messages.append({"role": "user", "content": question})
+    if st.session_state.get("adv_db_ok"):
+        try:
+            if not st.session_state.get("adv_session_id"):
+                st.session_state.adv_session_id = db.start_session(
+                    farmer["id"], farmer.get("preferred_lang", "en"))
+            entry["db_id"] = db.store_message(
+                farmer["id"], st.session_state.adv_session_id, question, result)
+        except Exception as exc:
+            st.toast(f"This turn was not saved: {exc}")
+    st.session_state.adv_messages.append(entry)
+    st.rerun()
+
+
 with tab_advisory:
     st.markdown("### Maize advisory")
     st.caption(
@@ -1402,50 +1487,86 @@ with tab_advisory:
     else:
         st.info(st.session_state.adv_db_note)
 
+    read_aloud = st.toggle(
+        "Read new answers aloud",
+        key="adv_tts",
+        help="Uses the on-device voice. Kiswahili answers are read by a Kiswahili "
+             "voice; the closing disclaimer is always read in English.",
+    )
+
     for index, message in enumerate(st.session_state.adv_messages):
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             if message.get("citations"):
                 advisory_render_sources(message["citations"])
             is_last = index == len(st.session_state.adv_messages) - 1
-            if message["role"] == "assistant" and is_last and message.get("db_id"):
-                mid = message["db_id"]
-                up_col, down_col, _ = st.columns([1, 1, 6])
-                if up_col.button("Helpful", key=f"adv_up_{mid}"):
-                    advisory_record_feedback(mid, True)
-                if down_col.button("Not helpful", key=f"adv_dn_{mid}"):
-                    advisory_record_feedback(mid, False)
+            if message["role"] == "assistant":
+                mid = message.get("db_id") or f"i{index}"
+                audio_key = str(mid)
+                cache = st.session_state.setdefault("adv_audio", {})
+                if voice.tts_available():
+                    listen_col, _, _ = st.columns([1, 1, 5])
+                    clicked = listen_col.button(
+                        "Listen", key=f"adv_say_{mid}",
+                        help="Read this answer aloud.")
+                    if clicked:
+                        advisory_speak(message, audio_key)
+                    elif read_aloud and is_last and audio_key not in cache:
+                        advisory_speak(message, audio_key, autoplay=True)
+                    elif audio_key in cache:
+                        st.audio(cache[audio_key], format="audio/wav")
+                if is_last and message.get("db_id"):
+                    up_col, down_col, _ = st.columns([1, 1, 6])
+                    if up_col.button("Helpful", key=f"adv_up_{mid}"):
+                        advisory_record_feedback(mid, True)
+                    if down_col.button("Not helpful", key=f"adv_dn_{mid}"):
+                        advisory_record_feedback(mid, False)
 
-    question = st.chat_input("Uliza kuhusu mahindi ... / Ask about maize ...")
-    if question:
-        pipeline = advisory_pipeline()
-        history = [{"role": m["role"], "content": m["content"]}
-                   for m in st.session_state.adv_messages]
-        result = None
-        try:
-            if not pipeline.is_loaded():
-                with st.spinner(
-                    "Loading the advisory models. This happens on the first question "
-                    "only and can take a minute."
-                ):
-                    pipeline.load()
-            with st.spinner("Searching the documents and writing an answer ..."):
-                result = pipeline.ask(question, history=history)
-        except Exception as exc:
-            st.error(f"The advisory service is unavailable: {exc}")
-
-        if result is not None:
-            entry = {"role": "assistant", "content": result["answer"],
-                     "citations": result["citations"]}
-            st.session_state.adv_messages.append({"role": "user", "content": question})
-            if st.session_state.get("adv_db_ok"):
-                try:
-                    if not st.session_state.get("adv_session_id"):
-                        st.session_state.adv_session_id = db.start_session(
-                            farmer["id"], farmer.get("preferred_lang", "en"))
-                    entry["db_id"] = db.store_message(
-                        farmer["id"], st.session_state.adv_session_id, question, result)
-                except Exception as exc:
-                    st.toast(f"This turn was not saved: {exc}")
-            st.session_state.adv_messages.append(entry)
+    # A recording is transcribed, then shown for correction before it is sent:
+    # a mis-heard question retrieves the wrong documents and wastes a minute of
+    # generation, so one confirmation step is cheaper than the failure.
+    pending = st.session_state.get("adv_pending")
+    if pending:
+        nonce = st.session_state.get("adv_edit_nonce", 0)
+        heard_in = {"sw": "Kiswahili", "en": "English"}.get(
+            pending.get("language"), pending.get("language") or "an unknown language")
+        st.info(
+            f"Here is what the microphone heard, in {heard_in}. Correct anything "
+            f"that is wrong, then send it."
+        )
+        st.text_area("Your question", key=f"adv_edit_{nonce}", height=90)
+        send_col, discard_col, _ = st.columns([1, 1, 4])
+        if send_col.button("Send question", type="primary", key="adv_send_pending"):
+            question = (st.session_state.get(f"adv_edit_{nonce}") or "").strip()
+            st.session_state.pop("adv_pending", None)
+            if question:
+                advisory_turn(question)
             st.rerun()
+        if discard_col.button("Discard", key="adv_discard_pending"):
+            st.session_state.pop("adv_pending", None)
+            st.rerun()
+
+    value = st.chat_input(
+        "Uliza kuhusu mahindi ... / Ask about maize ...",
+        accept_audio=voice.asr_available(),
+    )
+    if value:
+        typed = (value.text or "").strip()
+        recording = getattr(value, "audio", None)
+        if recording is not None:
+            with st.spinner("Transcribing your question ..."):
+                try:
+                    heard = voice.transcribe(recording)
+                except voice.VoiceUnavailable as exc:
+                    st.error(str(exc))
+                    heard = None
+            if heard and heard["text"]:
+                nonce = st.session_state.get("adv_edit_nonce", 0) + 1
+                st.session_state["adv_edit_nonce"] = nonce
+                st.session_state[f"adv_edit_{nonce}"] = heard["text"]
+                st.session_state.adv_pending = heard
+                st.rerun()
+            elif heard is not None:
+                st.warning("I could not make out any speech in that recording.")
+        elif typed:
+            advisory_turn(typed)
