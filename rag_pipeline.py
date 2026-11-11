@@ -67,7 +67,8 @@ LUO_STOP = {
     "miyo", "kawo", "chon", "koro", "ndalo", "higa", "dwe", "ot", "pi",
     "mach", "ber", "rach", "matin", "maduong'", "onego", "thiedho", "pidho",
     "jiwo", "onge", "nitie", "nigi", "ng'adi", "kawuono", "kiny", "nyoro",
-    "odiechieng'", "otieno", "okinyi",
+    "odiechieng'", "otieno", "okinyi", "pang", "chamo", "tiyo", "rito",
+    "dongo", "medo", "ochiek",
 }
 
 TOPIC_WORDS = [
@@ -79,7 +80,7 @@ TOPIC_WORDS = [
     "magonjwa", "wadudu", "mbegu", "udongo", "mvua", "kuvuna", "mavuno",
     "kupanda", "dalili", "tiba", "kuzuia", "ipil",
     "oduma", "lowo", "puodho", "koth", "kodhi", "manyasi", "kudni", "tuo",
-    "tuoche", "keyo", "kano", "cham", "chiemo", "yath", "kue", "pidho",
+    "tuoche", "keyo", "kano", "cham", "chiemo", "yath", "kue", "pidho", "pang",
 ]
 
 REFERENTIAL = re.compile(
