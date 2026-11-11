@@ -208,8 +208,10 @@ def db_connection():
         if exc.errno == 2003 and host in {"localhost", "127.0.0.1", "::1"}:
             raise ValueError(
                 f"MySQL at {host} is not reachable. On Streamlit Community Cloud "
-                "localhost is the app container, not your computer - set MYSQL_HOST "
-                "to a hosted database that accepts remote connections."
+                "localhost is the app container, not your computer. Open the app's "
+                "Settings -> Secrets and set MYSQL_HOST (plus MYSQL_DATABASE, "
+                "MYSQL_USER and MYSQL_PASSWORD) to a hosted MySQL database that "
+                "accepts remote connections, then reboot the app."
             ) from exc
         raise
     try:
@@ -290,8 +292,8 @@ def create_account(full_name: str, email: str, password: str, county: str | None
         raise ValueError("Enter a valid email address.")
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters.")
-    if preferred_lang not in ("en", "sw"):
-        raise ValueError("preferred_lang must be en or sw")
+    if preferred_lang not in ("en", "sw", "luo"):
+        raise ValueError("preferred_lang must be en, sw or luo")
     if email_exists(email):
         raise ValueError("An account with that email already exists.")
     with db_connection() as connection:
