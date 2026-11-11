@@ -7,10 +7,17 @@ Loads the artifacts exported by ``RAG_Advisory_Chatbot.ipynb`` section 11
 from the corpus and generating a grounded, cited reply.
 
 The Streamlit app imports this module and calls :meth:`AdvisoryPipeline.ask`.
-Everything is local and free: ``multilingual-e5-small`` embeds queries,
-``nllb-200-distilled-600M`` pivots Swahili and Dholuo to English and back, and
-``Qwen2.5-1.5B-Instruct`` writes the answer. The heavy models are loaded
-lazily on first use, so importing this module stays cheap.
+``multilingual-e5-small`` (about 0.5 GB) embeds queries locally, and answers
+are written by a hosted language model through :mod:`llm_client` - see that
+module for the provider settings. A local 1.5B generator plus NLLB needs about
+6 GB, far above Streamlit Community Cloud's ~2.7 GB ceiling.
+
+Swahili and Dholuo questions are pivoted through English. Translation uses
+NLLB-200 distilled (600M) quantised to int8 with CTranslate2 (about 0.6 GB),
+loaded only when a non-English question arrives; set
+``ADVISORY_TRANSLATION_BACKEND=google`` to use the hosted Google Translate API
+instead, or ``=llm`` to translate with the chat model. The translation model is
+never loaded for English questions, so the common path stays small.
 """
 
 from __future__ import annotations
@@ -42,6 +49,11 @@ DISCLAIMER = "For decisions that affect your harvest, consult your county extens
 LANGUAGES = ("en", "sw", "luo")
 LANGUAGE_LABELS = {"en": "English", "sw": "Kiswahili", "luo": "Dholuo"}
 NLLB_CODES = {"en": "eng_Latn", "sw": "swh_Latn", "luo": "luo_Latn"}
+
+#: int8 CTranslate2 conversion of ``facebook/nllb-200-distilled-600M``. It is
+#: already installed via faster-whisper and keeps translation off the RAM
+#: budget that the hosted answer model freed up.
+DEFAULT_CT2_TRANSLATION_MODEL = "JustFrederik/nllb-200-distilled-600M-ct2-int8"
 
 SW_STOP = {
     "ya", "na", "wa", "kwa", "cha", "hii", "hiyo", "hizo", "wao", "yake", "wake",
@@ -285,6 +297,8 @@ class AdvisoryPipeline:
         self._loaded = False
         self._lock = threading.Lock()
         self._trans_tokenizers = {}
+        self._ct2 = None
+        self._ct2_repo: str | None = None
 
     def is_loaded(self) -> bool:
         return self._loaded
@@ -295,12 +309,6 @@ class AdvisoryPipeline:
                 return self
             from rank_bm25 import BM25Okapi
             from sentence_transformers import SentenceTransformer
-            from transformers import (
-                AutoModelForCausalLM,
-                AutoModelForSeq2SeqLM,
-                AutoTokenizer,
-            )
-            import torch
 
             self.device = _resolve_device()
             self.config = self._load_verified()
@@ -314,20 +322,16 @@ class AdvisoryPipeline:
 
             _login_huggingface()
 
+            # Only the retrieval encoder lives on the app server. The answer
+            # model is hosted (llm_client) and NLLB is started lazily on the
+            # first Swahili/Dholuo question, so an English question never pays
+            # for models it does not use.
             self.embedder = SentenceTransformer(self.config["embedding_model"], device=self.device)
 
             tokens = [re.findall(r"[a-z0-9']+", chunk["text"].lower()) for chunk in self.chunks]
             self.bm25 = BM25Okapi(tokens)
 
             self.trans_model_name = self.config["translation_model"]
-            self.trans_model = AutoModelForSeq2SeqLM.from_pretrained(
-                self.trans_model_name).to(self.device)
-
-            self.gen_model_name = self.config["generation_model"]
-            self.gen_tokenizer = AutoTokenizer.from_pretrained(self.gen_model_name)
-            self.gen_model = AutoModelForCausalLM.from_pretrained(
-                self.gen_model_name, dtype=torch.float16).to(self.device)
-            self.gen_model.eval()
 
             self._loaded = True
         return self
@@ -414,10 +418,120 @@ class AdvisoryPipeline:
             )
         return self._trans_tokenizers[key]
 
+    def _translation_backend(self) -> str:
+        """Where translation runs: ``google``, ``llm``, ``local`` or ``transformers``."""
+        requested = (os.environ.get("ADVISORY_TRANSLATION_BACKEND") or "auto").strip().lower()
+        if requested in {"google", "llm", "local", "transformers"}:
+            return requested
+        if os.environ.get("GOOGLE_TRANSLATE_API_KEY"):
+            return "google"
+        return "local"
+
     def translate(self, text: str, source_lang: str, target_lang: str) -> str:
-        """Translate between any two configured languages with NLLB."""
+        """Translate between any two configured languages."""
         if source_lang == target_lang:
             return text
+        backend = self._translation_backend()
+        if backend == "google":
+            from llm_client import google_translate
+
+            return google_translate(text, source_lang, target_lang)
+        if backend == "llm":
+            from llm_client import translate_with_llm
+
+            return translate_with_llm(text, source_lang, target_lang)
+        if backend == "transformers":
+            return self._hf_translate(text, source_lang, target_lang)
+        return self._ct2_translate(text, source_lang, target_lang)
+
+    def _ct2_translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        """Translate with NLLB int8, one sentence at a time.
+
+        CTranslate2 keeps the model at about 0.6 GB instead of 2.4 GB.
+        Translating sentence by sentence matters: NLLB's decoder sometimes
+        stops after the first sentence (or repeats a phrase) when several
+        sentences are passed at once, which silently dropped parts of an
+        answer. Splitting keeps every sentence, and every ``[n]`` marker, in
+        place.
+        """
+        return self._translate_chunks(
+            text, lambda chunk: self._ct2_translate_once(chunk, source_lang, target_lang))
+
+    def _ct2_translate_once(self, text: str, source_lang: str, target_lang: str) -> str:
+        translator = self._ct2_model()
+        tokenizer = self._trans_tokenizer(source_lang, target_lang)
+        tokenizer.src_lang = NLLB_CODES[source_lang]
+        target_token = tokenizer.convert_ids_to_tokens(
+            tokenizer.convert_tokens_to_ids(NLLB_CODES[target_lang]))
+        source_tokens = tokenizer.convert_ids_to_tokens(
+            tokenizer.encode(text, truncation=True, max_length=512))
+        result = translator.translate_batch(
+            [source_tokens],
+            target_prefix=[[target_token]],
+            beam_size=int(os.environ.get("ADVISORY_TRANSLATION_BEAM", "4")),
+            no_repeat_ngram_size=3,
+            max_decoding_length=512,
+        )
+        hypothesis = result[0].hypotheses[0]
+        if hypothesis and hypothesis[0] == target_token:
+            hypothesis = hypothesis[1:]
+        return tokenizer.decode(
+            tokenizer.convert_tokens_to_ids(hypothesis),
+            skip_special_tokens=True).strip()
+
+    def _ct2_model(self):
+        """Load the int8 NLLB translator once and reuse it for the process."""
+        import ctranslate2
+        from huggingface_hub import snapshot_download
+
+        repo = (os.environ.get("ADVISORY_CT2_TRANSLATION_MODEL")
+                or DEFAULT_CT2_TRANSLATION_MODEL)
+        if self._ct2 is None or self._ct2_repo != repo:
+            path = snapshot_download(repo)
+            threads = max(1, min(2, os.cpu_count() or 1))
+            self._ct2 = ctranslate2.Translator(
+                path, device="cpu", compute_type="int8",
+                inter_threads=1, intra_threads=threads)
+            self._ct2_repo = repo
+        return self._ct2
+
+    @staticmethod
+    def _translate_chunks(text: str, translate_one) -> str:
+        """Run translation per sentence/line, preserving citations and order."""
+        pieces = [piece.strip() for piece in
+                  re.split(r"(?<=[.!?])\s+|\n+", text.strip()) if piece.strip()]
+        chunks: list[str] = []
+        for piece in pieces:
+            # "1." / "a." on its own is a list marker, not a sentence: keep it
+            # attached to the text that follows so NLLB never sees a fragment.
+            if chunks and re.fullmatch(r"\d+[.)]|[a-zA-Z][.)]", chunks[-1]):
+                chunks[-1] = chunks[-1] + " " + piece
+            else:
+                chunks.append(piece)
+        if not chunks:
+            return ""
+        rendered = []
+        for chunk in chunks:
+            marker = re.match(r"^([-*•]|\d+[.)])\s+(.*)$", chunk, re.S)
+            if marker:
+                rendered.append(marker.group(1) + " " + translate_one(marker.group(2)))
+            else:
+                rendered.append(translate_one(chunk))
+        return " ".join(rendered)
+
+    def _hf_translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        """Full-precision NLLB through transformers (local development only)."""
+        return self._translate_chunks(
+            text, lambda chunk: self._hf_translate_once(chunk, source_lang, target_lang))
+
+    def _hf_translate_once(self, text: str, source_lang: str, target_lang: str) -> str:
+        if not hasattr(self, "trans_model"):
+            import torch
+            from transformers import AutoModelForSeq2SeqLM
+
+            device = self.device or _resolve_device()
+            self.trans_model = AutoModelForSeq2SeqLM.from_pretrained(
+                self.trans_model_name).to(device)
         tokenizer = self._trans_tokenizer(source_lang, target_lang)
         tokens = tokenizer(text, return_tensors="pt", truncation=True,
                            max_length=512).to(self.trans_model.device)
@@ -489,14 +603,10 @@ class AdvisoryPipeline:
         return PROMPT_TEMPLATE.format(context=context, question=question, history=history_text)
 
     def generate(self, prompt: str, max_new_tokens: int = 400) -> str:
-        messages = [{"role": "user", "content": prompt}]
-        text = self.gen_tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True)
-        inputs = self.gen_tokenizer(text, return_tensors="pt").to(self.gen_model.device)
-        output = self.gen_model.generate(
-            **inputs, max_new_tokens=max_new_tokens, do_sample=False)
-        new_tokens = output[0][inputs["input_ids"].shape[1]:]
-        return self.gen_tokenizer.decode(new_tokens, skip_special_tokens=True)
+        """Write the answer with the configured hosted model."""
+        from llm_client import chat
+
+        return chat(prompt, max_tokens=max_new_tokens)
 
     @staticmethod
     def _citations(hits) -> list[dict]:
@@ -541,16 +651,22 @@ class AdvisoryPipeline:
         answer = self.generate(prompt, max_new_tokens=max_tokens)
         problems = validate_answer(answer, question, len(hits))
 
-        if problems:
+        # A non-English answer that arrives in English is translated below, so
+        # do not spend a second hosted call retrying it. Every other problem
+        # (missing citation, missing disclaimer, ...) is worth one retry.
+        retryable = [p for p in problems
+                     if language == "en" or p != "answer language does not match the question"]
+        if retryable:
             retry_prompt = prompt + ("\n\nCite every claim with [n] and end with the exact "
                                      "disclaimer sentence.")
             answer = self.generate(retry_prompt, max_new_tokens=max_tokens)
             problems = validate_answer(answer, question, len(hits))
 
         if language != "en" and detect_language(answer) != language:
-            # Qwen is English-centric, so translate the body into the question's
-            # language. Translate from whatever language it actually used, not
-            # only English: a Swahili answer to a Dholuo question is possible.
+            # The generator may answer in English even when the template asks
+            # for the question's language. Translate from whatever language it
+            # actually used, not only English: a Swahili answer to a Dholuo
+            # question is possible.
             answer_lang = detect_language(answer)
             body = answer.split(DISCLAIMER)[0].strip()
             answer = self.translate_to_language(

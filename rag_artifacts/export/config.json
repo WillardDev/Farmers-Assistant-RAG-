@@ -1,6 +1,6 @@
 {
   "embedding_model": "intfloat/multilingual-e5-small",
-  "generation_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "generation_model": "hosted",
   "translation_model": "facebook/nllb-200-distilled-600M",
   "languages": [
     "en",

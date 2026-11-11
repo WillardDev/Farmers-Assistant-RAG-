@@ -16,7 +16,7 @@ Maize foliar diseases spread rapidly and can cut yields by 30–50%. The current
 ## Project Objective
 
 - Classify a maize leaf image into one of four classes so a farmer can photograph a leaf and get an instant diagnosis.
-- Build and evaluate a free, locally-runnable RAG chatbot that provides grounded, source-cited answers on Kenyan maize farming in English, Kiswahili and Dholuo.
+- Build and evaluate a free, grounded RAG chatbot that provides source-cited answers on Kenyan maize farming in English, Kiswahili and Dholuo, with local retrieval and a hosted answer model so it fits a free web host.
 
 ## Research Questions
 
@@ -106,6 +106,7 @@ maize_disease/
 ├── Maize_Disease_Detection_YOLO.ipynb # image classification pipeline (sections 0-11)
 ├── RAG_Advisory_Chatbot.ipynb         # RAG chatbot pipeline (13 sections)
 ├── rag_pipeline.py                    # chatbot inference module, imported by app.py
+├── llm_client.py                      # hosted answer model (Groq / Gemini / HF), imported by rag_pipeline.py
 ├── voice.py                           # speech-to-text and text-to-speech, imported by app.py
 ├── db.py                              # MySQL chat-history functions, imported by app.py
 ├── rag_data/                          # raw corpus + chunks.jsonl
@@ -146,11 +147,35 @@ The app is behind a login, so a database is **required**: farmers create an acco
 
    Or, for a local Homebrew MySQL whose `root` has no password, set `MYSQL_USER=root` and leave `MYSQL_PASSWORD` empty instead. The app creates the tables itself on first use.
 
-Passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes (Python standard library). The first advisory question loads three local models (`multilingual-e5-small`, `nllb-200-distilled-600M`, `Qwen2.5-1.5B-Instruct`) and can take about a minute; later questions are fast.
+Passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes (Python standard library). The first advisory question loads the retrieval index and `multilingual-e5-small` (~0.5 GB, a few seconds). Swahili and Dholuo questions additionally download and start the int8 NLLB translation model (~0.6 GB) the first time they are asked. Answers are written by a hosted model, so the app server never loads a multi-gigabyte generator.
+
+### Where the models run
+
+| Job | Runs on | Footprint |
+|---|---|---|
+| Query embedding + retrieval | App server (local) | `multilingual-e5-small`, ~0.5 GB |
+| Swahili/Dholuo pivot | App server (local, lazy) | NLLB-200 distilled 600M, int8 CTranslate2, ~0.6 GB |
+| Answer writing | Hosted API | none on the server |
+
+The split exists because Streamlit Community Cloud gives an app about **2.7 GB of RAM and 2 CPU cores**. A local `Qwen2.5-1.5B-Instruct` alone takes ~3 GB in fp16 and takes minutes to write one answer on two cores; adding NLLB's 2.5 GB made the app exceed the limit and get killed the moment someone asked a question. See [Hosted answer model](#hosted-answer-model) for configuration.
 
 ### Advisory languages
 
-The advisory chat accepts **English**, **Kiswahili** and **Dholuo**. The corpus is English, so the pipeline translates Swahili (`swh_Latn`) and Dholuo (`luo_Latn`) questions into English with `nllb-200-distilled-600M`, retrieves from the English index, then translates the answer back into the question's language. Refusals and guardrails are localised too. Dholuo is a low-resource language for NLLB, so its answers should be treated as a helpful draft rather than a polished translation; the 12-question evaluation set in the notebook is still English/Swahili, so Dholuo quality is not yet benchmarked.
+The advisory chat accepts **English**, **Kiswahili** and **Dholuo**. The corpus is English, so the pipeline translates Swahili (`swh_Latn`) and Dholuo (`luo_Latn`) questions into English with `nllb-200-distilled-600M`, retrieves from the English index, then translates the answer back into the question's language. The default translation model is an int8 CTranslate2 conversion (~0.6 GB); set `ADVISORY_TRANSLATION_BACKEND=google` with a `GOOGLE_TRANSLATE_API_KEY` to move translation off the server entirely, or `=llm` to let the hosted chat model translate. Refusals and guardrails are localised too. Dholuo is a low-resource language for NLLB, so its answers should be treated as a helpful draft rather than a polished translation; the 12-question evaluation set in the notebook is still English/Swahili, so Dholuo quality is not yet benchmarked.
+
+### Hosted answer model
+
+Answer generation is the heavy, slow part, so it is the part that runs off the app server. `llm_client.py` talks to an OpenAI-compatible chat endpoint and supports three providers:
+
+| Provider | Free tier | Key |
+|---|---|---|
+| **Groq** (default) | Fast, generous, no card | `GROQ_API_KEY` from <https://console.groq.com/keys> |
+| **Google Gemini** | Generous daily quota | `GEMINI_API_KEY` from <https://aistudio.google.com/apikey> |
+| Hugging Face Inference Providers | Needs pre-paid credits, even on free accounts | `HF_TOKEN`, plus `ADVISORY_LLM_PROVIDER=hf` |
+
+`ADVISORY_LLM_PROVIDER=auto` picks Groq, then Gemini. Hugging Face is opt-in because a plain `HF_TOKEN` is also used to download public models, and that path fails without inference credits. Override the model with `GROQ_MODEL` (default `llama-3.3-70b-versatile`), `GEMINI_MODEL` (default `gemini-2.5-flash`) or `ADVISORY_HF_MODEL`. The advisory tab shows which provider is active, and a missing key produces a setup message instead of a stack trace.
+
+The notebook still trains and evaluates with a local generator; the hosted path only changes where the same grounded prompt is answered in the deployed app.
 
 ## Voice input and output
 
@@ -163,13 +188,13 @@ The advisory tab can be used by voice. Both directions run locally and free - no
 
 The Dholuo voice is a community checkpoint (CC BY-NC 4.0); check its model card before any commercial deployment.
 
-**Asking by voice.** The mic in the chat bar records, Whisper transcribes, and the transcript appears in an editable box. Nothing is sent until the farmer presses *Send question*. That confirmation step is deliberate: a mis-heard word changes which documents are retrieved, and generation takes tens of seconds, so correcting the transcript is far cheaper than re-asking. Whisper is also given a domain prompt (`VOICE_ASR_PROMPT`) with words like *mbolea*, *DAP*, *ekari*, *oduma* and *puodho*, which noticeably reduces domain-term errors.
+**Asking by voice.** The mic in the chat bar records, Whisper transcribes, and the transcript appears in an editable box. Nothing is sent until the farmer presses *Send question*. That confirmation step is deliberate: a mis-heard word changes which documents are retrieved, so correcting the transcript is cheaper than re-asking. Whisper is also given a domain prompt (`VOICE_ASR_PROMPT`) with words like *mbolea*, *DAP*, *ekari*, *oduma* and *puodho*, which noticeably reduces domain-term errors.
 
 **Answers read aloud.** Every assistant message has a *Listen* button, and *Read new answers aloud* speaks each new answer automatically. `speakable()` strips `[1]` citation markers and markdown, expands units (`kg/acre` → "kilograms per acre"), and spells numbers, because the VITS voices read bare digits unreliably - especially in Kiswahili and Dholuo. The closing disclaimer is always read with the English voice, since `rag_pipeline` appends it verbatim in every language.
 
 **Secure context.** The microphone, like the camera, only works on `localhost` or HTTPS. A phone reaching the app over plain `http://<lan-ip>:8501` gets no mic button.
 
-**Memory.** Voice adds roughly 1 GB on top of the advisory stack. That does not fit Streamlit Community Cloud's ~2.7 GB cap, which the chat already exceeds - see the deployment section below. `VOICE_ASR_MODEL=base` trims the speech model, but the real fix there is moving generation off the app container.
+**Memory.** Voice adds roughly 1 GB on top of the advisory tab. With hosted generation the normal footprint is about 1.1 GB (torch + retrieval encoder), rising to ~1.7 GB for Swahili/Dholuo (int8 NLLB) and ~2.7 GB only if a voice model and NLLB are both resident. `VOICE_ASR_MODEL=base` trims the speech model if that combination is too close to the cap.
 
 Optional overrides live in `.env.example`: `VOICE_ASR_MODEL`, `VOICE_ASR_PROMPT`, `VOICE_TTS_EN`, `VOICE_TTS_SW`, `VOICE_TTS_LUO`.
 
@@ -186,9 +211,13 @@ The repository is already wired for it (`.streamlit/config.toml`, `packages.txt`
    MYSQL_USER = "avnadmin"
    MYSQL_PASSWORD = "..."
    HF_TOKEN = "hf_..."
+
+   # Answer generation (free; see "Hosted answer model" above)
+   GROQ_API_KEY = "gsk_..."
+   # or: GEMINI_API_KEY = "..."
    ```
 
-   Community Cloud keeps secrets in `st.secrets` and does **not** export them as environment variables, so `db.py` copies them into `os.environ` at import time (`_hydrate_from_streamlit_secrets`). A `[mysql]` section works too. Save, then reboot the app.
+   Community Cloud keeps secrets in `st.secrets` and does **not** export them as environment variables, so `db.py` and `llm_client.py` copy them into `os.environ` at import time (`_hydrate_from_streamlit_secrets`). A `[mysql]` or `[advisory]` section works too. Save, then reboot the app.
 
    Hosted providers that require TLS (Aiven, TiDB Cloud, most managed MySQL) also need their CA certificate:
 
@@ -204,7 +233,9 @@ The repository is already wired for it (`.streamlit/config.toml`, `packages.txt`
 
 **Still seeing "MySQL at localhost is not reachable" after deployment?** The deployed app is reading `MYSQL_HOST=localhost` from its **Secrets**, not from your local `.env` (which is git-ignored and never uploaded). Open the app dashboard -> *Settings -> Secrets*, replace `MYSQL_HOST` with the hosted database host, save, and click **Reboot app**. A plain page refresh or *Rerun* is not enough: secrets are only re-read when the app process restarts.
 
-**Memory.** Community Cloud caps an app at roughly 2.7 GB of RAM and 2 CPU cores. The classifier alone (`ultralytics` + torch) needs about 0.6-0.9 GB, so detection fits. The advisory tab does not: `multilingual-e5-small` (fp32, ~0.5 GB), `nllb-200-distilled-600M` (fp32, ~2.5 GB) and `Qwen2.5-1.5B-Instruct` (fp16, ~3.1 GB) add up to about 6 GB of weights in one process. Because they load lazily on the first question, the app looks healthy until someone asks one - then it is killed for exceeding the limit and the whole app restarts, detection included. To keep the chat on Community Cloud, drop `nllb-200` (let the generator translate - but note this also removes the Swahili/Dholuo pivot) and use a smaller or quantized generator; otherwise move generation to a hosted inference API. Educational and non-profit projects can also apply for increased resources.
+**Memory.** Community Cloud caps an app at roughly 2.7 GB of RAM and 2 CPU cores. The classifier (`ultralytics` + torch) needs about 0.6-0.9 GB. The advisory tab adds `multilingual-e5-small` (~0.5 GB) and, only for non-English questions, int8 NLLB (~0.6 GB). That keeps the common path around 1.1 GB and the Swahili/Dholuo path around 1.7 GB, both comfortably inside the cap. Answers are written by a hosted model (see [Hosted answer model](#hosted-answer-model)), which also removes the multi-minute CPU wait a local 1.5B generator caused. If the app is still killed, check the Cloud logs: a `Killed` line means memory, and the voice models (Whisper ~0.5 GB plus a TTS voice) are the next-largest consumers.
+
+**Why not generate locally?** A local `Qwen2.5-1.5B-Instruct` needs ~3 GB of weights in fp16, and on two CPU cores writes roughly 2-4 tokens per second - minutes per answer. Together with fp32 NLLB (~2.5 GB) the advisory tab reached ~6 GB and was killed by the platform as soon as the weights loaded. Educational and non-profit projects can apply for increased resources, but that does not fix the CPU latency.
 
 
 ## Notebooks Structure

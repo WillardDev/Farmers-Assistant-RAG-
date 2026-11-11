@@ -33,6 +33,11 @@ sentence-transformers==6.1.0
 rank-bm25==0.2.2
 sentencepiece==0.2.2
 
+# int8 NLLB for the Swahili/Dholuo pivot in rag_pipeline.py. faster-whisper
+# already depends on ctranslate2; pinning it here keeps the CPU inference
+# engine - and the ~0.6 GB translation model - explicit.
+ctranslate2==4.8.5
+
 # chat history database (RAG_Advisory_Chatbot.ipynb section 12)
 mysql-connector-python==9.4.0
 python-dotenv==1.1.1

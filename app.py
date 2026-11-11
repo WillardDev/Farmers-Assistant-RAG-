@@ -9,10 +9,11 @@ YOLO26 classifier trained in ``Maize_Disease_Detection_YOLO.ipynb``.
 A third tab hosts the **Maize Advisory** chat. It answers farming questions in
 English, Kiswahili or Dholuo from a local retrieval-augmented pipeline built in
 ``RAG_Advisory_Chatbot.ipynb`` and exported to ``rag_artifacts/export/``. That
-pipeline (``rag_pipeline.py``) runs entirely on the machine: ``multilingual-e5-small``
-for retrieval, ``nllb-200`` for the Swahili/Dholuo pivot and ``Qwen2.5-1.5B-Instruct``
-for generation. The chat carries the conversation so far, so follow-up questions
-like "so should I use phosphorus?" are understood in context.
+pipeline (``rag_pipeline.py``) keeps retrieval local with ``multilingual-e5-small``
+and writes answers with a hosted language model (see ``llm_client.py``). Swahili
+and Dholuo questions are pivoted through English with an int8 NLLB model that is
+loaded only when needed. The chat carries the conversation so far, so follow-up
+questions like "so should I use phosphorus?" are understood in context.
 
 Questions can be typed or spoken. ``voice.py`` transcribes the microphone with
 Whisper and reads answers back with the MMS voices, so the tab is usable by a
@@ -79,6 +80,7 @@ import streamlit as st
 
 import db
 import voice
+from llm_client import HostedModelError, SETUP_HINT, provider_label
 from rag_pipeline import AdvisoryPipeline, LANGUAGE_LABELS
 
 # --------------------------------------------------------------------------- #
@@ -1437,13 +1439,12 @@ def advisory_turn(question: str) -> None:
     result = None
     try:
         if not pipeline.is_loaded():
-            with st.spinner(
-                "Loading the advisory models. This happens on the first question "
-                "only and can take a minute."
-            ):
+            with st.spinner("Loading the advisory index. This happens once."):
                 pipeline.load()
         with st.spinner("Searching the documents and writing an answer ..."):
             result = pipeline.ask(question, history=history)
+    except HostedModelError as exc:
+        st.error(str(exc))
     except Exception as exc:
         st.error(f"The advisory service is unavailable: {exc}")
 
@@ -1476,6 +1477,12 @@ with tab_advisory:
         "Ask about growing maize in Kenya - planting, varieties, fertiliser, pests, "
         "diseases, harvest and storage. English, Kiswahili or Dholuo."
     )
+
+    _provider = provider_label()
+    if _provider:
+        st.caption(f"Answers are written by a hosted model: {_provider}.")
+    else:
+        st.warning(SETUP_HINT)
 
     advisory_init_db()
     if "adv_messages" not in st.session_state:
