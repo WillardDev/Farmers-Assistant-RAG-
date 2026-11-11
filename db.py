@@ -40,7 +40,7 @@ try:
 except ImportError:
     mysql = None
 
-from rag_pipeline import looks_swahili
+from rag_pipeline import detect_language
 
 DB_ENV_KEYS = ("MYSQL_HOST", "MYSQL_DATABASE", "MYSQL_USER", "MYSQL_PASSWORD")
 
@@ -349,7 +349,7 @@ def start_session(farmer_id: int, language: str = "en") -> int:
 
 
 def store_message(farmer_id: int, session_id: int, question: str, result: dict) -> int:
-    language = "sw" if looks_swahili(question) else "en"
+    language = detect_language(question)
     sources = json.dumps(result.get("sources", []))
     with db_connection() as connection:
         cursor = connection.cursor()

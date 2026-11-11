@@ -7,10 +7,10 @@ of four classes - Blight, Common Rust, Gray Leaf Spot or Healthy - using the
 YOLO26 classifier trained in ``Maize_Disease_Detection_YOLO.ipynb``.
 
 A third tab hosts the **Maize Advisory** chat. It answers farming questions in
-English or Kiswahili from a local retrieval-augmented pipeline built in
+English, Kiswahili or Dholuo from a local retrieval-augmented pipeline built in
 ``RAG_Advisory_Chatbot.ipynb`` and exported to ``rag_artifacts/export/``. That
 pipeline (``rag_pipeline.py``) runs entirely on the machine: ``multilingual-e5-small``
-for retrieval, ``nllb-200`` for the Swahili pivot and ``Qwen2.5-1.5B-Instruct``
+for retrieval, ``nllb-200`` for the Swahili/Dholuo pivot and ``Qwen2.5-1.5B-Instruct``
 for generation. The chat carries the conversation so far, so follow-up questions
 like "so should I use phosphorus?" are understood in context.
 
@@ -79,7 +79,7 @@ import streamlit as st
 
 import db
 import voice
-from rag_pipeline import AdvisoryPipeline
+from rag_pipeline import AdvisoryPipeline, LANGUAGE_LABELS
 
 # --------------------------------------------------------------------------- #
 #  Palette and static configuration
@@ -99,6 +99,8 @@ ACCENT = "#6EC8FF"     # links, focus rings, secondary highlight
 IMG_SIZE = 256         # what the classifier was trained at
 PROJECT_ROOT = Path(__file__).resolve().parent
 PROFILE_DIR = PROJECT_ROOT / "profile_images"
+
+LANGUAGE_OPTIONS = {"English": "en", "Kiswahili": "sw", "Dholuo": "luo"}
 
 # The notebook's final model. It is a *fine-tuned* classifier, so it actually
 # knows the four maize classes. ``yolo26n-cls.pt`` is the generic pretrained
@@ -728,7 +730,7 @@ def render_auth_page() -> None:
               <div class="field">
                 <div class="field-key">Advisory chat</div>
                 <div class="field-val">Ask about planting, fertiliser, pests, diseases,
-                harvest and storage, in English or Kiswahili.</div>
+                harvest and storage, in English, Kiswahili or Dholuo.</div>
               </div>
               <div class="field">
                 <div class="field-key">Saved history</div>
@@ -776,7 +778,7 @@ def render_auth_page() -> None:
                                          help="At least 8 characters.")
                 confirm = st.text_input("Confirm password", type="password")
                 county = st.text_input("County (optional)")
-                preferred = st.selectbox("Preferred language", ["English", "Kiswahili"])
+                preferred = st.selectbox("Preferred language", list(LANGUAGE_OPTIONS))
                 picture = st.file_uploader("Profile picture (optional)",
                                            type=["jpg", "jpeg", "png"])
                 submitted = st.form_submit_button("Create account", type="primary",
@@ -790,7 +792,7 @@ def render_auth_page() -> None:
                         farmer_id = db.create_account(
                             full_name.strip(), email.strip(), password,
                             county.strip() or None,
-                            "sw" if preferred == "Kiswahili" else "en")
+                            LANGUAGE_OPTIONS[preferred])
                         if picture is not None:
                             try:
                                 relative = save_profile_image(farmer_id, picture)
@@ -904,7 +906,7 @@ with st.sidebar:
     if farmer.get("email"):
         st.caption(farmer["email"])
     if farmer.get("preferred_lang"):
-        st.caption("Swahili preferred" if farmer["preferred_lang"] == "sw" else "English preferred")
+        st.caption(f"{LANGUAGE_LABELS.get(farmer['preferred_lang'], 'English')} preferred")
     if st.button("Log out", width="stretch"):
         logout_farmer()
         st.rerun()
@@ -1472,7 +1474,7 @@ with tab_advisory:
     st.markdown("### Maize advisory")
     st.caption(
         "Ask about growing maize in Kenya - planting, varieties, fertiliser, pests, "
-        "diseases, harvest and storage. English or Kiswahili."
+        "diseases, harvest and storage. English, Kiswahili or Dholuo."
     )
 
     advisory_init_db()
@@ -1490,8 +1492,8 @@ with tab_advisory:
     read_aloud = st.toggle(
         "Read new answers aloud",
         key="adv_tts",
-        help="Uses the on-device voice. Kiswahili answers are read by a Kiswahili "
-             "voice; the closing disclaimer is always read in English.",
+        help="Uses the on-device voice. Kiswahili and Dholuo answers are read by "
+             "their own voices; the closing disclaimer is always read in English.",
     )
 
     for index, message in enumerate(st.session_state.adv_messages):
@@ -1528,7 +1530,7 @@ with tab_advisory:
     pending = st.session_state.get("adv_pending")
     if pending:
         nonce = st.session_state.get("adv_edit_nonce", 0)
-        heard_in = {"sw": "Kiswahili", "en": "English"}.get(
+        heard_in = {"sw": "Kiswahili", "en": "English", "luo": "Dholuo"}.get(
             pending.get("language"), pending.get("language") or "an unknown language")
         st.info(
             f"Here is what the microphone heard, in {heard_in}. Correct anything "
@@ -1547,7 +1549,7 @@ with tab_advisory:
             st.rerun()
 
     value = st.chat_input(
-        "Uliza kuhusu mahindi ... / Ask about maize ...",
+        "Penja kuom oduma ... / Uliza kuhusu mahindi ... / Ask about maize ...",
         accept_audio=voice.asr_available(),
     )
     if value:

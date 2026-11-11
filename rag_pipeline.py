@@ -8,7 +8,7 @@ from the corpus and generating a grounded, cited reply.
 
 The Streamlit app imports this module and calls :meth:`AdvisoryPipeline.ask`.
 Everything is local and free: ``multilingual-e5-small`` embeds queries,
-``nllb-200-distilled-600M`` pivots Swahili to English and back, and
+``nllb-200-distilled-600M`` pivots Swahili and Dholuo to English and back, and
 ``Qwen2.5-1.5B-Instruct`` writes the answer. The heavy models are loaded
 lazily on first use, so importing this module stays cheap.
 """
@@ -37,6 +37,12 @@ TOP_K = 5
 
 DISCLAIMER = "For decisions that affect your harvest, consult your county extension officer."
 
+#: Languages the chat accepts. Dholuo is a low-resource language in NLLB, but
+#: the translation pivot means retrieval always happens in English.
+LANGUAGES = ("en", "sw", "luo")
+LANGUAGE_LABELS = {"en": "English", "sw": "Kiswahili", "luo": "Dholuo"}
+NLLB_CODES = {"en": "eng_Latn", "sw": "swh_Latn", "luo": "luo_Latn"}
+
 SW_STOP = {
     "ya", "na", "wa", "kwa", "cha", "hii", "hiyo", "hizo", "wao", "yake", "wake",
     "katika", "kuhusu", "ambayo", "ambao", "hivyo", "lakini", "sana", "aidha", "bali",
@@ -48,6 +54,22 @@ SW_STOP = {
     "kupanda", "kuvuna", "dalili", "tiba", "kutibu", "kuzuia",
 }
 
+#: Distinctive Dholuo words used for routing and follow-up detection. Short,
+#: ambiguous forms ("to", "ma", "ne", "en", "in") are deliberately absent:
+#: they collide with English or Swahili and would misroute a question.
+LUO_STOP = {
+    "oduma", "lowo", "puodho", "koth", "chiemo", "cham", "keyo", "kano",
+    "tuo", "tuoche", "kudni", "kodhi", "manyasi", "yath", "kue", "piny",
+    "dala", "ji", "dhano", "ng'ato", "gima", "gik", "kendo", "bende",
+    "kuom", "mondo", "nyaka", "magi", "mago", "mae", "mano", "mar",
+    "nang'o", "ang'o", "nade", "ere", "ng'ano", "nyalo", "dwaro", "adwaro",
+    "ng'eyo", "ang'eyo", "kony", "timo", "wacho", "winjo", "neno", "kelo",
+    "miyo", "kawo", "chon", "koro", "ndalo", "higa", "dwe", "ot", "pi",
+    "mach", "ber", "rach", "matin", "maduong'", "onego", "thiedho", "pidho",
+    "jiwo", "onge", "nitie", "nigi", "ng'adi", "kawuono", "kiny", "nyoro",
+    "odiechieng'", "otieno", "okinyi",
+}
+
 TOPIC_WORDS = [
     "maize", "corn", "crop", "farm", "field", "soil", "rain", "seed", "fertilis",
     "fertiliz", "manure", "pest", "disease", "insect", "weed", "harvest", "yield",
@@ -56,18 +78,23 @@ TOPIC_WORDS = [
     "mahindi", "mbolea", "shamba", "kilimo", "wakulima", "mazao", "ugonjwa",
     "magonjwa", "wadudu", "mbegu", "udongo", "mvua", "kuvuna", "mavuno",
     "kupanda", "dalili", "tiba", "kuzuia", "ipil",
+    "oduma", "lowo", "puodho", "koth", "kodhi", "manyasi", "kudni", "tuo",
+    "tuoche", "keyo", "kano", "cham", "chiemo", "yath", "kue", "pidho",
 ]
 
 REFERENTIAL = re.compile(
     r"\b(it|its|they|them|their|that|this|these|those|the same|the above"
-    r"|hii|hiyo|hizi|hizo|huo|hayo|hao|wao|yake|wake|zao)\b", re.I
+    r"|hii|hiyo|hizi|hizo|huo|hayo|hao|wao|yake|wake|zao"
+    r"|mae|mano|magi|mago|ene)\b", re.I
 )
 
-LIST_TRIGGER = r"(list|enumerate|name|what are|which are|all|aina|gani|yapi|ipi|zipi)"
+LIST_TRIGGER = (r"(list|enumerate|name|what are|which are|all|aina|gani|yapi|ipi|zipi"
+                r"|nang'o|ang'o|gin mage|gik mage|magi)")
 LIST_NOUN = (r"(diseases?|pests?|insects?|weeds?|varieties?|varieti|symptoms?"
-             r"|problems?|magonjwa|wadudu|dalili)")
+             r"|problems?|magonjwa|wadudu|dalili|tuoche|kudni|kodhi)")
 LIST_NOUN_EN = {"magonjwa": "diseases", "wadudu": "pests", "dalili": "symptoms",
-                "varieti": "varieties"}
+                "varieti": "varieties", "tuoche": "diseases", "kudni": "pests",
+                "kodhi": "varieties"}
 
 LIST_INTENT = re.compile(
     r"\b" + LIST_TRIGGER + r"\b.{0,60}?\b" + LIST_NOUN + r"\b"
@@ -77,9 +104,10 @@ LIST_INTENT = re.compile(
 
 REFUSAL_RULES = [
     ("live_prices", [r"\bprices?\b", r"how much is", r"\bbei\b", r"ruzuku",
-                     r"subsid", r"market rate"]),
+                     r"subsid", r"market rate", r"\bsoko\b", r"\bpesa\b",
+                     r"\bng'adi\b"]),
     ("human_medicine", [r"malaria", r"\bhuman\b", r"binadamu", r"\bdawa\b",
-                        r"medicine"]),
+                        r"medicine", r"\bdaktari\b", r"ngima dhano"]),
 ]
 
 REFUSALS = {
@@ -90,18 +118,24 @@ REFUSALS = {
         "sw": "Sina bei za soko za sasa wala taarifa za ruzuku - vyanzo vyangu ni vitabu "
               "vya zamani. Uliza mnunuzi wako wa mazao, ofisi ya soko ya kaunti, au tumia "
               "jukwaa la e-Mkulima.",
+        "luo": "Aonge gi bei mag soko manyaka koro kata weche mag ruzuku - gik ma "
+               "ang'eyo gin gik ma nondiki. Penj jachiew e soko, ofisi mar soko mar "
+               "kaunti, kata tiy gi e-Mkulima.",
     },
     "human_medicine": {
         "en": "I only advise on growing maize. Questions about human health should go to "
               "a clinic or hospital.",
         "sw": "Nashauri tu kuhusu ukuzaji wa mahindi. Maswali kuhusu afya ya binadamu "
               "yawaoneshe kwa daktari.",
+        "luo": "Ajiwo mana kuom temo oduma. Penjo kuom ngima dhano onego dhi ne daktari.",
     },
     "off_topic": {
         "en": "I only answer questions about growing maize in Kenya - diseases, planting, "
               "fertiliser, pests, harvest and storage. Ask me about maize!",
         "sw": "Najibu maswali tu kuhusu ukuzaji wa mahindi nchini Kenya - magonjwa, "
               "kupanda, mbolea, wadudu, mavuno na uhifadhi. Niulize kuhusu mahindi!",
+        "luo": "Ajiwo mana kuom gik ma ochan e temo oduma e Kenya - tuoche, pidho, "
+               "manyasi, kudni, keyo gi kano. Penja kuom oduma!",
     },
 }
 
@@ -112,7 +146,7 @@ PROMPT_TEMPLATE = """You are the Kenya Maize Advisory Chatbot, an assistant for 
 Answer ONLY from the numbered sources below.
 - Cite sources like [1] or [2][3] after every claim.
 - If the sources do not contain the answer, say so and advise consulting a county extension officer.
-- Reply in the SAME language the question was asked in (English or Kiswahili).
+- Reply in the SAME language the question was asked in (English, Kiswahili or Dholuo).
 - For pesticides, only state what the source says (product, rate, waiting period) and add a wear-gloves/wash warning.
 - Answer the LATEST question. If it is a follow-up, use the conversation to work out what it refers to, keep the same subject, and do NOT repeat or reword an earlier answer.
 - Use the conversation so far only to understand the latest question; the facts must still come from the sources.
@@ -128,9 +162,34 @@ Question: {question}
 Answer:"""
 
 
+def _word_set(text: str) -> set[str]:
+    return set(re.findall(r"[a-zA-Z']+", text.lower()))
+
+
+def detect_language(text: str) -> str:
+    """Best guess between ``en``, ``sw`` and ``luo``.
+
+    Dholuo must score strictly higher than Swahili, because Dholuo questions
+    often borrow Swahili farming words (mbolea, mahindi) and a tie would route
+    them the wrong way. Two matching stopwords are required, so a single
+    loanword does not change the answer language.
+    """
+    words = _word_set(text)
+    sw = len(words & SW_STOP)
+    luo = len(words & LUO_STOP)
+    if luo >= 2 and luo > sw:
+        return "luo"
+    if sw >= 2:
+        return "sw"
+    return "en"
+
+
 def looks_swahili(text: str) -> bool:
-    words = set(re.findall(r"[a-zA-Z]+", text.lower()))
-    return len(words & SW_STOP) >= 2
+    return detect_language(text) == "sw"
+
+
+def looks_dholuo(text: str) -> bool:
+    return detect_language(text) == "luo"
 
 
 def mentions_topic(text: str) -> bool:
@@ -149,12 +208,12 @@ def is_follow_up(question: str) -> bool:
 
 def refuse(question: str, has_context: bool = False):
     text = question.lower()
-    lang = "sw" if looks_swahili(question) else "en"
+    lang = detect_language(question)
     for category, patterns in REFUSAL_RULES:
         if any(re.search(pattern, text) for pattern in patterns):
-            return REFUSALS[category][lang]
+            return REFUSALS[category].get(lang) or REFUSALS[category]["en"]
     if not mentions_topic(text) and not (has_context and is_follow_up(question)):
-        return REFUSALS["off_topic"][lang]
+        return REFUSALS["off_topic"].get(lang) or REFUSALS["off_topic"]["en"]
     return None
 
 
@@ -167,7 +226,7 @@ def validate_answer(answer: str, question: str, n_sources: int):
         problems.append("citation points outside the given sources")
     if not answer.strip().endswith(DISCLAIMER):
         problems.append("disclaimer missing at the end")
-    if looks_swahili(question) != looks_swahili(answer):
+    if detect_language(question) != detect_language(answer):
         problems.append("answer language does not match the question")
     if re.search(r"\b(guaranteed|guarantee|guarantees|hakikisha)\b|\b100%", answer, re.I):
         problems.append("promises certainty")
@@ -224,6 +283,7 @@ class AdvisoryPipeline:
         self.bm25 = None
         self._loaded = False
         self._lock = threading.Lock()
+        self._trans_tokenizers = {}
 
     def is_loaded(self) -> bool:
         return self._loaded
@@ -237,7 +297,6 @@ class AdvisoryPipeline:
             from transformers import (
                 AutoModelForCausalLM,
                 AutoModelForSeq2SeqLM,
-                AutoTokenizer,
             )
             import torch
 
@@ -259,10 +318,6 @@ class AdvisoryPipeline:
             self.bm25 = BM25Okapi(tokens)
 
             self.trans_model_name = self.config["translation_model"]
-            self.sw_tokenizer = AutoTokenizer.from_pretrained(
-                self.trans_model_name, src_lang="swh_Latn", tgt_lang="eng_Latn")
-            self.en_tokenizer = AutoTokenizer.from_pretrained(
-                self.trans_model_name, src_lang="eng_Latn", tgt_lang="swh_Latn")
             self.trans_model = AutoModelForSeq2SeqLM.from_pretrained(
                 self.trans_model_name).to(self.device)
 
@@ -344,32 +399,60 @@ class AdvisoryPipeline:
             fused = self._diversify(fused, k, per_source_cap)
         return [(score, self._by_id[chunk_id]) for chunk_id, score in fused[:k]]
 
-    def translate_to_english(self, text: str) -> str:
-        tokens = self.sw_tokenizer(text, return_tensors="pt", truncation=True,
-                                   max_length=128).to(self.trans_model.device)
+    def _trans_tokenizer(self, source_lang: str, target_lang: str):
+        """Tokenizer configured for one NLLB direction (cached per pair)."""
+        key = (source_lang, target_lang)
+        if key not in self._trans_tokenizers:
+            from transformers import AutoTokenizer
+
+            self._trans_tokenizers[key] = AutoTokenizer.from_pretrained(
+                self.trans_model_name,
+                src_lang=NLLB_CODES[source_lang],
+                tgt_lang=NLLB_CODES[target_lang],
+            )
+        return self._trans_tokenizers[key]
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        """Translate between any two configured languages with NLLB."""
+        if source_lang == target_lang:
+            return text
+        tokenizer = self._trans_tokenizer(source_lang, target_lang)
+        tokens = tokenizer(text, return_tensors="pt", truncation=True,
+                           max_length=512).to(self.trans_model.device)
         output = self.trans_model.generate(
-            **tokens, max_length=200,
-            forced_bos_token_id=self.sw_tokenizer.convert_tokens_to_ids("eng_Latn"))
-        english = self.sw_tokenizer.decode(output[0], skip_special_tokens=True)
+            **tokens, max_length=512,
+            forced_bos_token_id=tokenizer.convert_tokens_to_ids(NLLB_CODES[target_lang]))
+        return tokenizer.decode(output[0], skip_special_tokens=True)
+
+    def translate_to_english(self, text: str, source_lang: str | None = None) -> str:
+        source_lang = source_lang or detect_language(text)
+        if source_lang == "en":
+            return text
+        english = self.translate(text, source_lang, "en")
         return re.sub(r"\bcorn\b", "maize", english, flags=re.IGNORECASE)
 
     def translate_to_swahili(self, text: str) -> str:
-        tokens = self.en_tokenizer(text, return_tensors="pt", truncation=True,
-                                   max_length=512).to(self.trans_model.device)
-        output = self.trans_model.generate(
-            **tokens, max_length=512,
-            forced_bos_token_id=self.en_tokenizer.convert_tokens_to_ids("swh_Latn"))
-        return self.en_tokenizer.decode(output[0], skip_special_tokens=True)
+        return self.translate(text, "en", "sw")
+
+    def translate_to_dholuo(self, text: str) -> str:
+        return self.translate(text, "en", "luo")
+
+    def translate_to_language(self, text: str, target_lang: str,
+                              source_lang: str | None = None) -> str:
+        source_lang = source_lang or detect_language(text)
+        return self.translate(text, source_lang, target_lang)
 
     def retrieve(self, query: str, k: int = TOP_K, context: list[str] | None = None,
                  per_source_cap: int | None = None):
-        routed = self.translate_to_english(query) if looks_swahili(query) else query
+        source_lang = detect_language(query)
+        routed = self.translate_to_english(query, source_lang) if source_lang != "en" else query
         search_query = routed
         if context:
             recent = []
             for previous in context[-2:]:
-                if looks_swahili(previous):
-                    previous = self.translate_to_english(previous)
+                previous_lang = detect_language(previous)
+                if previous_lang != "en":
+                    previous = self.translate_to_english(previous, previous_lang)
                 recent.append(previous)
             search_query = " ".join(recent + [routed])
         return routed, self.hybrid_search(search_query, k, per_source_cap)
@@ -427,13 +510,14 @@ class AdvisoryPipeline:
             self.load()
 
         history = history or []
+        language = detect_language(question)
         context = self._context_turns(question, history)
 
         refusal = refuse(question, has_context=bool(history))
         if refusal:
             return {"question": question, "answer": refusal, "sources": [],
                     "citations": [], "english_query": None, "refused": True, "problems": [],
-                    "translated": False, "language": "sw" if looks_swahili(question) else "en"}
+                    "translated": False, "language": language}
 
         list_question = bool(LIST_INTENT.search(question))
         k_use = min(k * 3, 15) if list_question else k
@@ -444,7 +528,8 @@ class AdvisoryPipeline:
             noun_match = re.search(LIST_NOUN, question, re.I)
             noun = noun_match.group(1).lower() if noun_match else "diseases"
             noun = LIST_NOUN_EN.get(noun, noun)
-            english_query = self.translate_to_english(question) if looks_swahili(question) else question
+            english_query = (self.translate_to_english(question, language)
+                             if language != "en" else question)
             probe = f"maize {noun} list identification symptoms"
             hits = self._merge([english_query, probe], k_use, cap)
         else:
@@ -460,9 +545,14 @@ class AdvisoryPipeline:
             answer = self.generate(retry_prompt, max_new_tokens=max_tokens)
             problems = validate_answer(answer, question, len(hits))
 
-        if looks_swahili(question) and not looks_swahili(answer):
+        if language != "en" and detect_language(answer) != language:
+            # Qwen is English-centric, so translate the body into the question's
+            # language. Translate from whatever language it actually used, not
+            # only English: a Swahili answer to a Dholuo question is possible.
+            answer_lang = detect_language(answer)
             body = answer.split(DISCLAIMER)[0].strip()
-            answer = self.translate_to_swahili(body).strip() + " " + DISCLAIMER
+            answer = self.translate_to_language(
+                body, language, source_lang=answer_lang).strip() + " " + DISCLAIMER
             problems = validate_answer(answer, question, len(hits))
 
         return {
@@ -474,5 +564,5 @@ class AdvisoryPipeline:
             "refused": False,
             "problems": problems,
             "translated": english_query != question,
-            "language": "sw" if looks_swahili(question) else "en",
+            "language": language,
         }

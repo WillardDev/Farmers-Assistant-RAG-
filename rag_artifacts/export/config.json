@@ -4,7 +4,8 @@
   "translation_model": "facebook/nllb-200-distilled-600M",
   "languages": [
     "en",
-    "sw"
+    "sw",
+    "luo"
   ],
   "chunk_words": 220,
   "overlap_words": 40,

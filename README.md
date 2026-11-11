@@ -5,9 +5,9 @@
 Two projects in one repository:
 
 1. **Image classification** — classify a maize leaf photo into **Blight**, **Common Rust**, **Gray Leaf Spot** or **Healthy**, comparing a pretrained YOLO26 classifier against a custom CNN built from scratch in Keras.
-2. **Advisory chatbot (RAG)** — an English/Swahili retrieval-augmented chatbot that answers questions about maize farming in Kenya from a curated PDF knowledge base, integrated as a third tab in the same Streamlit app. Farmer profiles and full chat history are stored in **MySQL**.
+2. **Advisory chatbot (RAG)** — an English/Kiswahili/Dholuo retrieval-augmented chatbot that answers questions about maize farming in Kenya from a curated PDF knowledge base, integrated as a third tab in the same Streamlit app. Farmer profiles and full chat history are stored in **MySQL**.
 
-A farmer can photograph a leaf, get an instant diagnosis, then continue the conversation for management advice — in English or Swahili. Conversations are saved so they can be revisited and analysed later.
+A farmer can photograph a leaf, get an instant diagnosis, then continue the conversation for management advice — in English, Kiswahili or Dholuo. Conversations are saved so they can be revisited and analysed later.
 
 ## Problem Statement
 
@@ -16,7 +16,7 @@ Maize foliar diseases spread rapidly and can cut yields by 30–50%. The current
 ## Project Objective
 
 - Classify a maize leaf image into one of four classes so a farmer can photograph a leaf and get an instant diagnosis.
-- Build and evaluate a free, locally-runnable RAG chatbot that provides grounded, source-cited answers on Kenyan maize farming in English and Swahili.
+- Build and evaluate a free, locally-runnable RAG chatbot that provides grounded, source-cited answers on Kenyan maize farming in English, Kiswahili and Dholuo.
 
 ## Research Questions
 
@@ -31,8 +31,8 @@ Maize foliar diseases spread rapidly and can cut yields by 30–50%. The current
 **Advisory chatbot (RAG):**
 
 6. How well does hybrid retrieval (BM25 + dense vectors) serve Kenyan maize farming queries compared with dense-only retrieval?
-7. Can cross-lingual embeddings retrieve English corpus content from Swahili queries effectively?
-8. Does the translation-pivot architecture (Swahili → English → Swahili) produce answers comparable in quality to native English answers?
+7. Can cross-lingual embeddings retrieve English corpus content from Swahili queries, and does the translation pivot extend that to Dholuo?
+8. Does the translation-pivot architecture (Swahili/Dholuo → English → Swahili/Dholuo) produce answers comparable in quality to native English answers?
 9. How do chunk size, overlap and top-k affect retrieval accuracy and answer faithfulness?
 10. How reliably do guardrails keep answers on-topic, grounded in sources, and free of stale market/subsidy claims?
 
@@ -148,24 +148,30 @@ The app is behind a login, so a database is **required**: farmers create an acco
 
 Passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes (Python standard library). The first advisory question loads three local models (`multilingual-e5-small`, `nllb-200-distilled-600M`, `Qwen2.5-1.5B-Instruct`) and can take about a minute; later questions are fast.
 
+### Advisory languages
+
+The advisory chat accepts **English**, **Kiswahili** and **Dholuo**. The corpus is English, so the pipeline translates Swahili (`swh_Latn`) and Dholuo (`luo_Latn`) questions into English with `nllb-200-distilled-600M`, retrieves from the English index, then translates the answer back into the question's language. Refusals and guardrails are localised too. Dholuo is a low-resource language for NLLB, so its answers should be treated as a helpful draft rather than a polished translation; the 12-question evaluation set in the notebook is still English/Swahili, so Dholuo quality is not yet benchmarked.
+
 ## Voice input and output
 
 The advisory tab can be used by voice. Both directions run locally and free - no API key, no per-request cost - in `voice.py`.
 
 | Direction | Model | Size | Notes |
 |---|---|---|---|
-| Speech → text | `faster-whisper` `small`, int8, CPU | ~500 MB | Multilingual, so one model covers English and Kiswahili. Language is auto-detected and shown to the farmer. |
-| Text → speech | `facebook/mms-tts-eng` and `facebook/mms-tts-swh` | ~145 MB each | MMS VITS voices. Kiswahili is a native voice, not an English model reading Swahili text. |
+| Speech → text | `faster-whisper` `small`, int8, CPU | ~500 MB | Multilingual, so one model covers English and Kiswahili. Language is auto-detected and shown to the farmer. Whisper has no Dholuo token, so Dholuo is typed rather than spoken. |
+| Text → speech | `facebook/mms-tts-eng`, `facebook/mms-tts-swh` and `rnjema-unima/mms-tts-luo-baseline` | ~145 MB each | MMS VITS voices. Kiswahili and Dholuo are native voices, not an English model reading the text. Meta did not publish an official Dholuo MMS voice, so the default is a community checkpoint; override it with `VOICE_TTS_LUO`. |
 
-**Asking by voice.** The mic in the chat bar records, Whisper transcribes, and the transcript appears in an editable box. Nothing is sent until the farmer presses *Send question*. That confirmation step is deliberate: a mis-heard word changes which documents are retrieved, and generation takes tens of seconds, so correcting the transcript is far cheaper than re-asking. Whisper is also given a domain prompt (`VOICE_ASR_PROMPT`) with words like *mbolea*, *DAP* and *ekari*, which noticeably reduces domain-term errors.
+The Dholuo voice is a community checkpoint (CC BY-NC 4.0); check its model card before any commercial deployment.
 
-**Answers read aloud.** Every assistant message has a *Listen* button, and *Read new answers aloud* speaks each new answer automatically. `speakable()` strips `[1]` citation markers and markdown, expands units (`kg/acre` → "kilograms per acre"), and spells numbers, because the VITS voices read bare digits unreliably - especially in Kiswahili. The closing disclaimer is always read with the English voice, since `rag_pipeline` appends it verbatim in both languages.
+**Asking by voice.** The mic in the chat bar records, Whisper transcribes, and the transcript appears in an editable box. Nothing is sent until the farmer presses *Send question*. That confirmation step is deliberate: a mis-heard word changes which documents are retrieved, and generation takes tens of seconds, so correcting the transcript is far cheaper than re-asking. Whisper is also given a domain prompt (`VOICE_ASR_PROMPT`) with words like *mbolea*, *DAP*, *ekari*, *oduma* and *puodho*, which noticeably reduces domain-term errors.
+
+**Answers read aloud.** Every assistant message has a *Listen* button, and *Read new answers aloud* speaks each new answer automatically. `speakable()` strips `[1]` citation markers and markdown, expands units (`kg/acre` → "kilograms per acre"), and spells numbers, because the VITS voices read bare digits unreliably - especially in Kiswahili and Dholuo. The closing disclaimer is always read with the English voice, since `rag_pipeline` appends it verbatim in every language.
 
 **Secure context.** The microphone, like the camera, only works on `localhost` or HTTPS. A phone reaching the app over plain `http://<lan-ip>:8501` gets no mic button.
 
-**Memory.** Voice adds roughly 0.8 GB on top of the advisory stack. That does not fit Streamlit Community Cloud's ~2.7 GB cap, which the chat already exceeds - see the deployment section below. `VOICE_ASR_MODEL=base` trims the speech model, but the real fix there is moving generation off the app container.
+**Memory.** Voice adds roughly 1 GB on top of the advisory stack. That does not fit Streamlit Community Cloud's ~2.7 GB cap, which the chat already exceeds - see the deployment section below. `VOICE_ASR_MODEL=base` trims the speech model, but the real fix there is moving generation off the app container.
 
-Optional overrides live in `.env.example`: `VOICE_ASR_MODEL`, `VOICE_ASR_PROMPT`, `VOICE_TTS_EN`, `VOICE_TTS_SW`.
+Optional overrides live in `.env.example`: `VOICE_ASR_MODEL`, `VOICE_ASR_PROMPT`, `VOICE_TTS_EN`, `VOICE_TTS_SW`, `VOICE_TTS_LUO`.
 
 ## Deploying to Streamlit Community Cloud
 
@@ -196,7 +202,7 @@ The repository is already wired for it (`.streamlit/config.toml`, `packages.txt`
 
 2. **A reachable database.** A local MySQL (`MYSQL_HOST=localhost`) is not reachable from Cloud - that address is the app's own container, so the app fails with `2003: Can't connect to MySQL server on 'localhost:3306'`. Use a hosted instance (Aiven, TiDB Cloud, Railway, a VPS) that accepts remote connections, and allow Streamlit's egress (or `0.0.0.0/0` while testing). Accounts created against your local database do not exist in the cloud one, so sign up again on the deployed app.
 
-**Memory.** Community Cloud caps an app at roughly 2.7 GB of RAM and 2 CPU cores. The classifier alone (`ultralytics` + torch) needs about 0.6-0.9 GB, so detection fits. The advisory tab does not: `multilingual-e5-small` (fp32, ~0.5 GB), `nllb-200-distilled-600M` (fp32, ~2.5 GB) and `Qwen2.5-1.5B-Instruct` (fp16, ~3.1 GB) add up to about 6 GB of weights in one process. Because they load lazily on the first question, the app looks healthy until someone asks one - then it is killed for exceeding the limit and the whole app restarts, detection included. To keep the chat on Community Cloud, drop `nllb-200` (let the generator translate) and use a smaller or quantized generator; otherwise move generation to a hosted inference API. Educational and non-profit projects can also apply for increased resources.
+**Memory.** Community Cloud caps an app at roughly 2.7 GB of RAM and 2 CPU cores. The classifier alone (`ultralytics` + torch) needs about 0.6-0.9 GB, so detection fits. The advisory tab does not: `multilingual-e5-small` (fp32, ~0.5 GB), `nllb-200-distilled-600M` (fp32, ~2.5 GB) and `Qwen2.5-1.5B-Instruct` (fp16, ~3.1 GB) add up to about 6 GB of weights in one process. Because they load lazily on the first question, the app looks healthy until someone asks one - then it is killed for exceeding the limit and the whole app restarts, detection included. To keep the chat on Community Cloud, drop `nllb-200` (let the generator translate - but note this also removes the Swahili/Dholuo pivot) and use a smaller or quantized generator; otherwise move generation to a hosted inference API. Educational and non-profit projects can also apply for increased resources.
 
 
 ## Notebooks Structure
