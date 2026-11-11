@@ -230,6 +230,20 @@ def refuse(question: str, has_context: bool = False):
     return None
 
 
+def normalize_answer(answer: str) -> str:
+    """Tidy model formatting that would otherwise fail the guardrails.
+
+    Chat models occasionally emit full-width CJK brackets around citations
+    (``【2】``) or wrap the disclaimer in markdown emphasis. Both mean the same
+    thing, so normalise them before validation instead of spending a retry.
+    """
+    answer = re.sub(r"[【［]\s*(\d+)\s*[】］]", r"[\1]", answer)
+    index = answer.rfind(DISCLAIMER)
+    if index != -1 and re.fullmatch(r"[\s*_>`\"']*", answer[index + len(DISCLAIMER):]):
+        answer = answer[:index].rstrip(" \t\n*_>`\"'") + " " + DISCLAIMER
+    return answer.strip()
+
+
 def validate_answer(answer: str, question: str, n_sources: int):
     problems = []
     citations = [int(n) for n in re.findall(r"\[(\d+)\]", answer)]
@@ -244,9 +258,26 @@ def validate_answer(answer: str, question: str, n_sources: int):
     if re.search(r"\b(guaranteed|guarantee|guarantees|hakikisha)\b|\b100%", answer, re.I):
         problems.append("promises certainty")
     if re.search(r"\b(pesticide|insecticide|fungicide)s?\b", answer, re.I) \
-            and not re.search(r"\d+\s*(ml|g|kg|%|litre|liter)\b", answer, re.I):
+            and not re.search(r"\d+\s*(ml|g|kg|%|litre|liter)\b", answer, re.I) \
+            and not re.search(r"\b(product label|manufacturer|label)\b", answer, re.I):
         problems.append("pesticide advice without an application rate")
     return problems
+
+
+def retry_note(problems) -> str:
+    """Turn validation problems into the extra instruction for one retry."""
+    notes = []
+    if any("citation" in problem for problem in problems):
+        notes.append("Cite every claim with [n], using only the source numbers given.")
+    if "disclaimer missing at the end" in problems:
+        notes.append(f"End with exactly this sentence: {DISCLAIMER}")
+    if "pesticide advice without an application rate" in problems:
+        notes.append("If you recommend a pesticide, give the application rate from "
+                     "the sources; if they give none, tell the farmer to follow the "
+                     "product label.")
+    if "promises certainty" in problems:
+        notes.append("Do not promise certainty and do not use words such as guaranteed.")
+    return " ".join(notes) or "Answer more carefully, following every instruction above."
 
 
 def _sha256_of(path: Path) -> str:
@@ -495,8 +526,10 @@ class AdvisoryPipeline:
             self._ct2_repo = repo
         return self._ct2
 
-    @staticmethod
-    def _translate_chunks(text: str, translate_one) -> str:
+    _CITATION_TAIL = re.compile(r"\s*(?:\[\d+\])+(?P<punct>[.!?]?)\s*$")
+
+    @classmethod
+    def _translate_chunks(cls, text: str, translate_one) -> str:
         """Run translation per sentence/line, preserving citations and order."""
         pieces = [piece.strip() for piece in
                   re.split(r"(?<=[.!?])\s+|\n+", text.strip()) if piece.strip()]
@@ -513,10 +546,18 @@ class AdvisoryPipeline:
         rendered = []
         for chunk in chunks:
             marker = re.match(r"^([-*•]|\d+[.)])\s+(.*)$", chunk, re.S)
-            if marker:
-                rendered.append(marker.group(1) + " " + translate_one(marker.group(2)))
+            prefix, body = (marker.group(1) + " ", marker.group(2)) if marker else ("", chunk)
+            # NLLB sometimes rewrites a bracketed number ("[5]" -> "[16]").
+            # Hold the citation outside the decoder and put it back untouched.
+            citation = cls._CITATION_TAIL.search(body)
+            if citation and re.search(r"[A-Za-z0-9]", body[:citation.start()]):
+                tail = citation.group(0).strip()
+                rendered.append(prefix + translate_one(body[:citation.start()]).strip()
+                                + " " + tail)
+            elif re.fullmatch(r"\[\d+\][.!?]?", body):
+                rendered.append(prefix + body)  # a bare citation: leave it alone
             else:
-                rendered.append(translate_one(chunk))
+                rendered.append(prefix + translate_one(body))
         return " ".join(rendered)
 
     def _hf_translate(self, text: str, source_lang: str, target_lang: str) -> str:
@@ -648,7 +689,7 @@ class AdvisoryPipeline:
             english_query, hits = self.retrieve(question, k_use, context=context, per_source_cap=cap)
 
         prompt = self.build_prompt(english_query, hits, history)
-        answer = self.generate(prompt, max_new_tokens=max_tokens)
+        answer = normalize_answer(self.generate(prompt, max_new_tokens=max_tokens))
         problems = validate_answer(answer, question, len(hits))
 
         # A non-English answer that arrives in English is translated below, so
@@ -657,9 +698,8 @@ class AdvisoryPipeline:
         retryable = [p for p in problems
                      if language == "en" or p != "answer language does not match the question"]
         if retryable:
-            retry_prompt = prompt + ("\n\nCite every claim with [n] and end with the exact "
-                                     "disclaimer sentence.")
-            answer = self.generate(retry_prompt, max_new_tokens=max_tokens)
+            retry_prompt = prompt + "\n\n" + retry_note(retryable)
+            answer = normalize_answer(self.generate(retry_prompt, max_new_tokens=max_tokens))
             problems = validate_answer(answer, question, len(hits))
 
         if language != "en" and detect_language(answer) != language:

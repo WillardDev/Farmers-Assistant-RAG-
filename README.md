@@ -173,7 +173,7 @@ Answer generation is the heavy, slow part, so it is the part that runs off the a
 | **Google Gemini** | Generous daily quota | `GEMINI_API_KEY` from <https://aistudio.google.com/apikey> |
 | Hugging Face Inference Providers | Needs pre-paid credits, even on free accounts | `HF_TOKEN`, plus `ADVISORY_LLM_PROVIDER=hf` |
 
-`ADVISORY_LLM_PROVIDER=auto` picks Groq, then Gemini. Hugging Face is opt-in because a plain `HF_TOKEN` is also used to download public models, and that path fails without inference credits. Override the model with `GROQ_MODEL` (default `llama-3.3-70b-versatile`), `GEMINI_MODEL` (default `gemini-2.5-flash`) or `ADVISORY_HF_MODEL`. The advisory tab shows which provider is active, and a missing key produces a setup message instead of a stack trace.
+`ADVISORY_LLM_PROVIDER=auto` picks Groq, then Gemini. Hugging Face is opt-in because a plain `HF_TOKEN` is also used to download public models, and that path fails without inference credits. Override the model with `GROQ_MODEL` (default `openai/gpt-oss-120b`), `GEMINI_MODEL` (default `gemini-2.5-flash`) or `ADVISORY_HF_MODEL`. The advisory tab shows which provider is active, and a missing key produces a setup message instead of a stack trace.
 
 The notebook still trains and evaluates with a local generator; the hosted path only changes where the same grounded prompt is answered in the deployed app.
 

@@ -21,7 +21,7 @@ Configuration (environment variables, or the same keys in Streamlit secrets):
     provider that has a key, preferring Groq, then Gemini, then Hugging Face.
 ``GROQ_API_KEY`` / ``GROQ_MODEL``
     Free key from https://console.groq.com/keys. Default model
-    ``llama-3.3-70b-versatile``.
+    ``openai/gpt-oss-120b``.
 ``GEMINI_API_KEY`` / ``GEMINI_MODEL``
     Free key from https://aistudio.google.com/apikey. Default model
     ``gemini-2.5-flash``.
@@ -58,9 +58,12 @@ SECRET_ENV_KEYS = (
     "HF_TOKEN",
 )
 
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 DEFAULT_HF_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+
+#: Sent on every request; a bare urllib user agent is blocked by some CDNs.
+USER_AGENT = "maize-advisory/1.0 (+https://github.com/WillardDev/Farmers-Assistant-RAG-)"
 
 PROVIDER_LABELS = {"groq": "Groq", "gemini": "Google Gemini", "hf": "Hugging Face"}
 
@@ -154,7 +157,7 @@ def model_name(provider: str) -> str:
 
 
 def provider_label() -> str:
-    """``"Groq · llama-3.3-70b-versatile"`` for the UI, or ``""``."""
+    """``"Groq · openai/gpt-oss-120b"`` for the UI, or ``""``."""
     provider = resolve_provider()
     if not provider:
         return ""
@@ -166,6 +169,9 @@ def _post_json(url: str, payload: dict, headers: dict | None = None,
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=body, method="POST")
     request.add_header("Content-Type", "application/json")
+    # Some providers sit behind a CDN that rejects the default "Python-urllib"
+    # signature with HTTP 403 before the API key is even checked.
+    request.add_header("User-Agent", USER_AGENT)
     for name, value in (headers or {}).items():
         request.add_header(name, value)
     try:
@@ -199,7 +205,9 @@ def _explain_http_error(status: int, detail: str) -> str:
     if status == 429:
         return ("The hosted answer model is rate-limited right now. Wait a minute "
                 "and try again, or configure a second provider. (" + detail + ")")
-    if status == 400 and "not supported" in detail.lower():
+    if status in (400, 404) and ("not supported" in detail.lower()
+                                 or "does not exist" in detail.lower()
+                                 or "model_not_found" in detail.lower()):
         return ("The selected model is not available from your provider account. "
                 "Use the default GROQ_MODEL/GEMINI_MODEL, or set a model your "
                 "account can access. (" + detail + ")")
@@ -210,14 +218,15 @@ def _explain_http_error(status: int, detail: str) -> str:
 
 
 def _openai_chat(url: str, api_key: str, model: str, prompt: str,
-                 max_tokens: int, temperature: float) -> str:
+                 max_tokens: int, temperature: float,
+                 extra_payload: dict | None = None) -> str:
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": temperature,
-        "max_tokens": max_tokens,
         "stream": False,
     }
+    payload.update(extra_payload or {"max_tokens": max_tokens})
     data = _post_json(url, payload, {"Authorization": f"Bearer {api_key}"})
     try:
         choices = data["choices"]
@@ -235,8 +244,17 @@ def _groq_chat(prompt: str, max_tokens: int, temperature: float) -> str:
     api_key = _env("GROQ_API_KEY")
     if not api_key:
         raise HostedModelError(SETUP_HINT)
+    model = model_name("groq")
+    extra = {"max_tokens": max_tokens}
+    if "gpt-oss" in model:
+        # Reasoning tokens count towards the completion budget on Groq, so
+        # leave headroom and ask for brief reasoning: this is grounded
+        # extraction from the retrieved context, not open-ended problem solving.
+        extra = {"max_completion_tokens": max_tokens + 300,
+                 "reasoning_effort": "low"}
     return _openai_chat("https://api.groq.com/openai/v1/chat/completions",
-                        api_key, model_name("groq"), prompt, max_tokens, temperature)
+                        api_key, model, prompt, max_tokens, temperature,
+                        extra_payload=extra)
 
 
 def _hf_chat(prompt: str, max_tokens: int, temperature: float) -> str:
