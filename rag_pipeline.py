@@ -50,6 +50,53 @@ LANGUAGES = ("en", "sw", "luo")
 LANGUAGE_LABELS = {"en": "English", "sw": "Kiswahili", "luo": "Dholuo"}
 NLLB_CODES = {"en": "eng_Latn", "sw": "swh_Latn", "luo": "luo_Latn"}
 
+#: NLLB mistranslates a few common farming words, especially in Dholuo, where
+#: "tuo mar oduma" becomes "whooping cough" and "oduma" can become "flour".
+#: Rewriting those terms before translation keeps the English query on topic.
+#: Applied only to questions being translated *into* English, never to answers.
+QUERY_GLOSSARY = {
+    "sw": (
+        (r"\bukungu wa majani ya mahindi\b", "maize leaf blight"),
+        (r"\bukungu wa majani\b", "leaf blight"),
+        (r"\bukungu\b", "blight"),
+    ),
+    "luo": (
+        (r"\bmane ma ber\b", "which is good"),
+        (r"\boduma\b", "maize"),
+        (r"\btuoche\b", "diseases"),
+        (r"\btuo\b", "disease"),
+        (r"\bpuodho\b", "field"),
+        (r"\bpuothe\b", "fields"),
+        (r"\bmbolea\b", "fertilizer"),
+        (r"\bkudni\b", "pest"),
+        (r"\bonego\b", "attacks"),
+        (r"\bkelo\b", "causes"),
+        (r"\bgeng'o\b", "prevent"),
+        (r"\bchamo\b", "eats"),
+        (r"\bchiemo\b", "food"),
+        (r"\bcham\b", "food"),
+        (r"\bkodhi\b", "seed"),
+        (r"\blowo\b", "soil"),
+        (r"\bkoth\b", "rain"),
+        (r"\bkeyo\b", "harvest"),
+        (r"\byath\b", "medicine"),
+        (r"\bmanyasi\b", "medicine"),
+        (r"\bang'o\b", "what"),
+        (r"\bkaka\b", "how"),
+        (r"\banyalo\b", "can I"),
+        (r"\binyalo\b", "can you"),
+        (r"\bma\b", "that"),
+        (r"\bmar\b", "of"),
+    ),
+}
+
+
+def apply_query_glossary(text: str, language: str) -> str:
+    """Rewrite known problem words before NLLB, so retrieval stays on topic."""
+    for pattern, replacement in QUERY_GLOSSARY.get(language, ()):
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return text
+
 #: int8 CTranslate2 conversion of ``facebook/nllb-200-distilled-600M``. It is
 #: already installed via faster-whisper and keeps translation off the RAM
 #: budget that the hosted answer model freed up.
@@ -244,7 +291,14 @@ def normalize_answer(answer: str) -> str:
     return answer.strip()
 
 
-def validate_answer(answer: str, question: str, n_sources: int):
+def validate_answer(answer: str, question: str, n_sources: int,
+                    semantic: bool = True):
+    """Check citations, disclaimer and language; optionally the advice itself.
+
+    ``semantic=False`` is used after a translated answer: rules such as "a
+    pesticide needs an application rate" were already enforced on the English
+    answer, and their keyword lists are English-only.
+    """
     problems = []
     citations = [int(n) for n in re.findall(r"\[(\d+)\]", answer)]
     if not citations:
@@ -255,6 +309,8 @@ def validate_answer(answer: str, question: str, n_sources: int):
         problems.append("disclaimer missing at the end")
     if detect_language(question) != detect_language(answer):
         problems.append("answer language does not match the question")
+    if not semantic:
+        return problems
     if re.search(r"\b(guaranteed|guarantee|guarantees|hakikisha)\b|\b100%", answer, re.I):
         problems.append("promises certainty")
     if re.search(r"\b(pesticide|insecticide|fungicide)s?\b", answer, re.I) \
@@ -462,6 +518,8 @@ class AdvisoryPipeline:
         """Translate between any two configured languages."""
         if source_lang == target_lang:
             return text
+        # An en dash between digits ("10–14") can be read as "1014" by NLLB.
+        text = re.sub(r"(?<=\d)[–—−](?=\d)", "-", text)
         backend = self._translation_backend()
         if backend == "google":
             from llm_client import google_translate
@@ -585,7 +643,8 @@ class AdvisoryPipeline:
         source_lang = source_lang or detect_language(text)
         if source_lang == "en":
             return text
-        english = self.translate(text, source_lang, "en")
+        english = self.translate(
+            apply_query_glossary(text, source_lang), source_lang, "en")
         return re.sub(r"\bcorn\b", "maize", english, flags=re.IGNORECASE)
 
     def translate_to_swahili(self, text: str) -> str:
@@ -711,7 +770,9 @@ class AdvisoryPipeline:
             body = answer.split(DISCLAIMER)[0].strip()
             answer = self.translate_to_language(
                 body, language, source_lang=answer_lang).strip() + " " + DISCLAIMER
-            problems = validate_answer(answer, question, len(hits))
+            # Only format rules apply now; the advice rules are English-keyword
+            # based and were already checked on the English answer.
+            problems = validate_answer(answer, question, len(hits), semantic=False)
 
         return {
             "question": question,

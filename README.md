@@ -161,7 +161,7 @@ The split exists because Streamlit Community Cloud gives an app about **2.7 GB o
 
 ### Advisory languages
 
-The advisory chat accepts **English**, **Kiswahili** and **Dholuo**. The corpus is English, so the pipeline translates Swahili (`swh_Latn`) and Dholuo (`luo_Latn`) questions into English with `nllb-200-distilled-600M`, retrieves from the English index, then translates the answer back into the question's language. The default translation model is an int8 CTranslate2 conversion (~0.6 GB); set `ADVISORY_TRANSLATION_BACKEND=google` with a `GOOGLE_TRANSLATE_API_KEY` to move translation off the server entirely, or `=llm` to let the hosted chat model translate. Refusals and guardrails are localised too. Dholuo is a low-resource language for NLLB, so its answers should be treated as a helpful draft rather than a polished translation; the 12-question evaluation set in the notebook is still English/Swahili, so Dholuo quality is not yet benchmarked.
+The advisory chat accepts **English**, **Kiswahili** and **Dholuo**. The corpus is English, so the pipeline translates Swahili (`swh_Latn`) and Dholuo (`luo_Latn`) questions into English with `nllb-200-distilled-600M`, retrieves from the English index, then translates the answer back into the question's language. A small query glossary rewrites farming terms that NLLB reliably mistranslates (`ukungu` → *blight*, `oduma` → *maize*, `tuo` → *disease*) before the question is translated, which keeps retrieval on topic. The default translation model is an int8 CTranslate2 conversion (~0.6 GB); set `ADVISORY_TRANSLATION_BACKEND=google` with a `GOOGLE_TRANSLATE_API_KEY` to move translation off the server entirely, or `=llm` to let the hosted chat model translate. Refusals and guardrails are localised too. Dholuo is a low-resource language for NLLB, so its answers should be treated as a helpful draft rather than a polished translation; the 12-question evaluation set in the notebook is still English/Swahili, so Dholuo quality is not yet benchmarked.
 
 ### Hosted answer model
 
@@ -173,7 +173,7 @@ Answer generation is the heavy, slow part, so it is the part that runs off the a
 | **Google Gemini** | Generous daily quota | `GEMINI_API_KEY` from <https://aistudio.google.com/apikey> |
 | Hugging Face Inference Providers | Needs pre-paid credits, even on free accounts | `HF_TOKEN`, plus `ADVISORY_LLM_PROVIDER=hf` |
 
-`ADVISORY_LLM_PROVIDER=auto` picks Groq, then Gemini. Hugging Face is opt-in because a plain `HF_TOKEN` is also used to download public models, and that path fails without inference credits. Override the model with `GROQ_MODEL` (default `openai/gpt-oss-120b`), `GEMINI_MODEL` (default `gemini-2.5-flash`) or `ADVISORY_HF_MODEL`. The advisory tab shows which provider is active, and a missing key produces a setup message instead of a stack trace.
+`ADVISORY_LLM_PROVIDER=auto` picks Groq, then Gemini. Hugging Face is opt-in because a plain `HF_TOKEN` is also used to download public models, and that path fails without inference credits. Override the model with `GROQ_MODEL` (default `qwen/qwen3.8-27b`), `GEMINI_MODEL` (default `gemini-2.5-flash`) or `ADVISORY_HF_MODEL`. The advisory tab shows which provider is active, and a missing key produces a setup message instead of a stack trace.
 
 The notebook still trains and evaluates with a local generator; the hosted path only changes where the same grounded prompt is answered in the deployed app.
 

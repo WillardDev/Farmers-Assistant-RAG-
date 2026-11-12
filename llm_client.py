@@ -18,10 +18,11 @@ Configuration (environment variables, or the same keys in Streamlit secrets):
 
 ``ADVISORY_LLM_PROVIDER``
     ``auto`` (default), ``groq``, ``gemini`` or ``hf``. ``auto`` picks the first
-    provider that has a key, preferring Groq, then Gemini, then Hugging Face.
+    provider that has a key, preferring Groq, then Gemini. Hugging Face is
+    opt-in (``ADVISORY_LLM_PROVIDER=hf``) because it needs inference credits.
 ``GROQ_API_KEY`` / ``GROQ_MODEL``
     Free key from https://console.groq.com/keys. Default model
-    ``openai/gpt-oss-120b``.
+    ``qwen/qwen3.8-27b``.
 ``GEMINI_API_KEY`` / ``GEMINI_MODEL``
     Free key from https://aistudio.google.com/apikey. Default model
     ``gemini-2.5-flash``.
@@ -58,7 +59,7 @@ SECRET_ENV_KEYS = (
     "HF_TOKEN",
 )
 
-DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
+DEFAULT_GROQ_MODEL = "qwen/qwen3.8-27b"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 DEFAULT_HF_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
@@ -157,7 +158,7 @@ def model_name(provider: str) -> str:
 
 
 def provider_label() -> str:
-    """``"Groq · openai/gpt-oss-120b"`` for the UI, or ``""``."""
+    """``"Groq · qwen/qwen3.8-27b"`` for the UI, or ``""``."""
     provider = resolve_provider()
     if not provider:
         return ""
